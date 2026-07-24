@@ -1,0 +1,351 @@
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+from discord.ui import Modal, TextInput
+import aiofiles
+import random
+import json
+import os
+import asyncio
+from flask import Flask
+from threading import Thread
+
+# Configuración
+intents = discord.Intents.default()
+intents.message_content = True  # <--- ESTA LÍNEA ES LA CLAVE
+
+# Ahora sí, el bot usará esos permisos
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+# Servidor para mantener activo
+app = Flask(__name__)
+@app.route('/')
+def home(): return "Bot activo"
+def run(): app.run(host='0.0.0.0', port=8080)
+Thread(target=run).start()
+
+DB_FILE = "eco.json"
+datos = {}
+
+if os.path.exists(DB_FILE):
+    with open(DB_FILE, "r") as f: datos = json.load(f)
+
+def guardar_datos():
+    with open(DB_FILE, "w") as f: json.dump(datos, f)
+
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print("Bot listo con todos los comandos.")
+
+# --- COMANDOS DE BANCO ---
+@bot.tree.command(name="verbanco", description="Mira cuánto tienes guardado")
+async def verbanco(interaction: discord.Interaction):
+    uid = str(interaction.user.id)
+    saldo = datos.get(uid, {}).get("banco", 0)
+    await interaction.response.send_message(f"🏦 Tu saldo seguro es: **{saldo}**")
+
+@bot.tree.command(name="addbanco", description="Deposita en el banco")
+async def addbanco(interaction: discord.Interaction, cantidad: int):
+    uid = str(interaction.user.id)
+    if uid not in datos: datos[uid] = {"dinero": 1000, "banco": 0}
+    if cantidad > datos[uid]["dinero"]:
+        await interaction.response.send_message("❌ No tienes suficiente dinero en mano.")
+    else:
+        datos[uid]["dinero"] -= cantidad
+        datos[uid]["banco"] += cantidad
+        guardar_datos()
+        await interaction.response.send_message(f"✅ Depositaste {cantidad}.")
+
+@bot.tree.command(name="sacarbanco", description="Retira del banco")
+async def sacarbanco(interaction: discord.Interaction, cantidad: int):
+    uid = str(interaction.user.id)
+    if cantidad > datos.get(uid, {}).get("banco", 0):
+        await interaction.response.send_message("❌ Fondos insuficientes en banco.")
+    else:
+        datos[uid]["banco"] -= cantidad
+        datos[uid]["dinero"] += cantidad
+        guardar_datos()
+        await interaction.response.send_message(f"✅ Retiraste {cantidad}.")
+
+
+
+
+@bot.tree.command(name="suerte", description="Prueba tu suerte")
+async def suerte(interaction: discord.Interaction, cantidad: int):
+    # --- VALIDACIÓN DE APUESTA (MÍNIMA Y MÁXIMA) ---
+    if cantidad <= 0:
+        await interaction.response.send_message("❌ La cantidad debe ser mayor a 0.", ephemeral=False)
+        return
+        
+    if cantidad > 1000:
+        await interaction.response.send_message("❌ El límite máximo de apuesta es 1000.", ephemeral=False)
+        return
+    # -----------------------------------------------
+
+    # Aquí sigue tu código de saldo y lógica de juego...
+	
+    # Procesar apuesta
+    eleccion_usuario = caraocruz.lower()
+    resultado = random.choice(["cara", "cruz"])
+    
+    # Respondemos al usuario
+    if eleccion_usuario == resultado:
+        ganancia = monto * 2
+        datos[uid]["dinero"] += monto # Recupera lo apostado + lo ganado
+        msg = f"🎲 ¡Salió **{resultado}**! Ganaste **{monto}**."
+    else:
+        datos[uid]["dinero"] -= monto
+        msg = f"🎲 ¡Salió **{resultado}**! Perdiste **{monto}**."
+    
+    guardar_datos()
+    await interaction.response.send_message(msg)
+	
+@bot.tree.command(name="ayuda", description="Muestra la lista de todos los comandos disponibles")
+async def ayuda(interaction: discord.Interaction):
+    mensaje = (
+        "📜 **Lista de Comandos del Bot**\n\n"
+        "💰 **Economía:**\n"
+        "• `/dinero` - Consulta tu dinero en mano.\n"
+        "• `/verbanco` - Consulta tu saldo en el banco.\n"
+        "• `/addbanco [cantidad]` - Deposita dinero.\n"
+        "• `/sacarbanco [cantidad]` - Retira dinero.\n"
+        "• `/balance` - Mira tu fortuna total.\n"
+        "• `/top` - Mira el ranking de los más ricos.\n"
+        "• `/transferir [usuario] [cantidad]` - Envía dinero a alguien.\n\n"
+        "⚖️ **Acción y Riesgo (¡Cuidado con la prisión!):**\n"
+        "• `/trabajar` - Gana dinero trabajando.\n"
+        "• `/crimen` - Intenta un robo arriesgado.\n"
+        "• `/robar [usuario]` - Intenta robarle a otro usuario.\n"
+        "• `/robarbanco [usuario]` - Atraca el banco de otro usuario.\n"
+        "• `/suerte [cara/cruz] [monto]` - Apuesta tu dinero.\n\n"
+        "👑 **Administración:**\n"
+        "• `/dar [usuario] [cantidad]` - Entrega dinero (Solo dueño).\n"
+        "• `/quitar [usuario] [cantidad]` - Retira dinero (Solo dueño)."
+    )
+    await interaction.response.send_message(mensaje, ephemeral=False)
+										
+	
+# --- COMANDOS DE ADMINISTRACIÓN (Solo Dueño) ---
+@bot.tree.command(name="dar", description="Da dinero a un usuario (Dueño)")
+async def dar(interaction: discord.Interaction, usuario: discord.Member, cantidad: int):
+    # Verificación de ID de dueño
+    if interaction.user.id != 1176784867544014871:
+        await interaction.response.send_message("❌ No tienes permiso para usar este comando.", ephemeral=True)
+        return
+
+    uid = str(usuario.id)
+    if uid not in datos: datos[uid] = {"dinero": 1000, "banco": 0}
+    
+    datos[uid]["dinero"] += cantidad
+    guardar_datos()
+    await interaction.response.send_message(f"✅ Se le han dado {cantidad} a {usuario.name}.")
+
+@bot.tree.command(name="quitar", description="Quita dinero a un usuario (Dueño)")
+async def quitar(interaction: discord.Interaction, usuario: discord.Member, cantidad: int):
+    # Verificación de ID de dueño
+    if interaction.user.id != 1176784867544014871:
+        await interaction.response.send_message("❌ No tienes permiso para usar este comando.", ephemeral=True)
+        return
+
+    uid = str(usuario.id)
+    if uid in datos:
+        datos[uid]["dinero"] -= cantidad
+        guardar_datos()
+        await interaction.response.send_message(f"✅ Se le han quitado {cantidad} a {usuario.name}.")
+    else:
+        await interaction.response.send_message("❌ Ese usuario no tiene registro de dinero.")
+# --- COMANDOS DE ACCIÓN ---
+
+@bot.tree.command(name="dinero", description="Mira cuánto dinero tienes en mano")
+async def dinero(interaction: discord.Interaction):
+    uid = str(interaction.user.id)
+    # Si el usuario no existe, le damos el saldo inicial
+    if uid not in datos: datos[uid] = {"dinero": 1000, "banco": 0}
+    saldo = datos[uid]["dinero"]
+    await interaction.response.send_message(f"💵 Tienes **{saldo}** en mano.")
+
+@bot.tree.command(name="trabajar", description="Gana dinero trabajando honestamente")
+async def trabajar(interaction: discord.Interaction):
+    uid = str(interaction.user.id)
+    if uid not in datos: datos[uid] = {"dinero": 1000, "banco": 0}
+    
+    ganancia = random.randint(100, 500)
+    datos[uid]["dinero"] += ganancia
+    guardar_datos()
+    await interaction.response.send_message(f"✅ ¡Buen trabajo! Ganaste **{ganancia}**.")
+
+
+    # --- LÓGICA DE ARRESTO COMÚN ---
+async def procesar_arresto(interaction: discord.Interaction):
+    duracion = random.randint(3, 10) # Condena random
+    ROL_PRISIONERO_ID = 1523409852511158412
+    rol_prisionero = interaction.guild.get_role(ROL_PRISIONERO_ID)
+    
+    await interaction.user.add_roles(rol_prisionero)
+    await interaction.followup.send(f"🚨 ¡Te atraparon! Serás arrestado por **{duracion} minutos**.")
+    
+    # Tiempo en segundo plano
+    await asyncio.sleep(duracion * 60)
+    
+    await interaction.user.remove_roles(rol_prisionero)
+    try:
+        await interaction.user.send("🔓 Tu condena terminó. Ya puedes acceder al servidor.")
+    except:
+        pass
+# --- COMANDO /CRIMEN CORREGIDO Y FUNCIONAL ---
+@bot.tree.command(name="crimen", description="Comete un crimen (Riesgoso)")
+async def crimen(interaction: discord.Interaction):
+    await interaction.response.defer() # Necesario para procesar el arresto luego
+    
+    uid = str(interaction.user.id)
+    if uid not in datos: datos[uid] = {"dinero": 1000, "banco": 0}
+    
+    # 50% de probabilidad
+    if random.random() < 0.50:
+        # Éxito: calcular cantidad aleatoria
+        ganancia = random.randint(500, 1500)
+        datos[uid]["dinero"] += ganancia
+        guardar_datos() # ¡IMPORTANTE: Esto guarda el dinero en el archivo!
+        
+        await interaction.followup.send(f"😈 ¡Éxito! Lograste robar **{ganancia}**.")
+    else:
+        # Fallo: activar el arresto
+        await procesar_arresto(interaction)
+		
+# --- COMANDO /ROBAR --- 
+@bot.tree.command(name="robar", description="Intenta robar a otro usuario")
+async def robar(interaction: discord.Interaction, usuario: discord.Member):
+    await interaction.response.defer()
+    if random.random() < 0.40:
+        await interaction.followup.send(f"💰 ¡Éxito! Robaste a {usuario.name}.")
+    else:
+        await procesar_arresto(interaction)
+
+# --- COMANDO /ROBARBANCO ---
+@bot.tree.command(name="robarbanco", description="Atraca el banco")
+async def robarbanco(interaction: discord.Interaction, usuario: discord.Member):
+    await interaction.response.defer()
+    if random.random() < 0.20:
+        await interaction.followup.send(f"🏦 ¡BOOM! Robaste el banco de {usuario.name}.")
+    else:
+        await procesar_arresto(interaction)
+		
+    guardar_datos()
+# --- COMANDO /BALANCE ---
+@bot.tree.command(name="balance", description="Mira tu fortuna total (Mano + Banco)")
+async def balance(interaction: discord.Interaction):
+    uid = str(interaction.user.id)
+    if uid not in datos: datos[uid] = {"dinero": 1000, "banco": 0}
+    
+    total = datos[uid]["dinero"] + datos[uid]["banco"]
+    await interaction.response.send_message(f"💰 Tu fortuna total es de **{total}**.")
+
+# --- COMANDO /TOP ---
+@bot.tree.command(name="top", description="Mira quién es el más rico del servidor")
+async def top(interaction: discord.Interaction):
+    # Ordenamos los usuarios por dinero de mayor a menor
+    ranking = sorted(datos.items(), key=lambda x: x[1]["dinero"] + x[1]["banco"], reverse=True)[:5]
+    
+    texto = "🏆 **Top 5 más ricos del servidor:**\n\n"
+    for i, (uid, info) in enumerate(ranking, 1):
+        total = info["dinero"] + info["banco"]
+        try:
+            usuario = await bot.fetch_user(int(uid))
+            texto += f"{i}. {usuario.name}: **{total}**\n"
+        except:
+            texto += f"{i}. Usuario desconocido: **{total}**\n"
+    
+    await interaction.response.send_message(texto)
+
+# --- FUNCIONES DE BASE DE DATOS (ASÍNCRONAS) ---
+async def load_data():
+    try:
+        async with aiofiles.open('eco.json', mode='r') as f:
+            content = await f.read()
+            return json.loads(content)
+    except FileNotFoundError:
+        return {}
+
+async def save_data(data):
+    async with aiofiles.open('eco.json', mode='w') as f:
+        await f.write(json.dumps(data, indent=4))
+
+# --- FORMULARIO Y COMANDO SAVETEXTO ---
+class TextFormModal(discord.ui.Modal, title='Configurar nuevo texto'):
+    nombre = discord.ui.TextInput(label='Nombre del embed', placeholder='Ej: Reglas')
+    activador = discord.ui.TextInput(label='Palabra activadora', placeholder='Ej: !reglas')
+    mensaje_texto = discord.ui.TextInput(label='Mensaje fuera del embed', style=discord.TextStyle.paragraph, placeholder='Ej: ¡Atención a todos!')
+    contenido = discord.ui.TextInput(label='Contenido del embed', style=discord.TextStyle.paragraph, placeholder='Cuerpo del embed...')
+    async def on_submit(self, interaction: discord.Interaction):
+        # Asegúrate de que esta línea tenga 8 espacios desde el inicio
+        embed = discord.Embed(title=self.nombre.value, description=self.contenido.value, color=discord.Color.red())
+        
+        # Guardado asíncrono
+        data = await load_data()
+        if 'custom_texts' not in data:
+            data['custom_texts'] = {}
+        
+        data['custom_texts'][self.activador.value.lower()] = {
+            "title": self.nombre.value, 
+            "content": self.contenido.value, 
+            "message_text": self.mensaje_texto.value
+        }
+        await save_data(data)
+        
+        # Este await debe estar alineado igual que el 'embed =' de arriba
+        await interaction.response.send_message(
+            f"✅ Guardado. Actívalo con `{self.activador.value}`.\n\n{self.mensaje_texto.value}", 
+            embed=embed, 
+            ephemeral=True
+	)
+		
+		
+
+
+@bot.tree.command(name="savetexto", description="Crea un nuevo texto automático con embed rojo")
+async def savetexto(interaction: discord.Interaction):
+    await interaction.response.send_modal(TextFormModal())
+
+# --- ON_MESSAGE (FILTRADO Y SEGURO) ---
+@bot.event
+async def on_message(message):
+    if message.author.bot: return
+
+    data = await load_data()
+    custom_texts = data.get('custom_texts', {})
+    activador = message.content.lower()
+    
+    if activador in custom_texts:
+        config = custom_texts[activador]
+        embed = discord.Embed(title=config['title'], description=config['content'], color=discord.Color.red())
+        await message.channel.send(content=config['message_text'], embed=embed)
+    
+    await bot.process_commands(message)
+	
+
+# --- COMANDO /TRANSFERIR ---
+@bot.tree.command(name="transferir", description="Transfiere dinero a otro usuario")
+async def transferir(interaction: discord.Interaction, usuario: discord.Member, cantidad: int):
+    uid_emisor = str(interaction.user.id)
+    uid_receptor = str(usuario.id)
+    
+    # Validaciones
+    if cantidad <= 0:
+        await interaction.response.send_message("❌ La cantidad debe ser mayor a 0.", ephemeral=True)
+        return
+        
+    if uid_emisor not in datos or datos[uid_emisor]["dinero"] < cantidad:
+        await interaction.response.send_message("❌ No tienes suficiente dinero en mano.", ephemeral=True)
+        return
+        
+    # Realizar transferencia
+    datos[uid_emisor]["dinero"] -= cantidad
+    if uid_receptor not in datos: datos[uid_receptor] = {"dinero": 1000, "banco": 0}
+    datos[uid_receptor]["dinero"] += cantidad
+    
+    guardar_datos()
+    await interaction.response.send_message(f"💸 Has transferido **{cantidad}** a {usuario.name}.")
+
+
+bot.run(os.environ['DISCORD_TOKEN'])
