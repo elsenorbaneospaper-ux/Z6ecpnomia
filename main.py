@@ -166,13 +166,15 @@ async def ayuda(interaction: discord.Interaction):
 										
 	
 # --- COMANDOS DE ADMINISTRACIÓN (Solo Dueño) ---
-@bot.tree.command(name="dar", description="Da dinero a un usuario (Dueño)")
-async def dar(interaction: discord.Interaction, usuario: discord.Member, cantidad: int):
-    # Verificación de ID de dueño
-    if interaction.user.id != 1491476806203740373:
-        await interaction.response.send_message("❌ No tienes permiso para usar este comando.", ephemeral=True)
-        return
+# Lista de IDs de usuarios autorizados
+USUARIOS_PERMITIDOS = [1491476806203740373, 1439675836746829986]
 
+@bot.tree.command(name="dar", description="Da dinero a un usuario")
+async def dar(interaction: discord.Interaction, usuario: discord.Member, cantidad: int):
+    # Verificación de IDs permitidas
+    if interaction.user.id not in USUARIOS_PERMITIDOS:
+        await interaction.response.send_message("❌ No tienes permisos para usar este comando.", ephemeral=True)
+        return
     uid = str(usuario.id)
     if uid not in datos: datos[uid] = {"dinero": 1000, "banco": 0}
     
@@ -180,12 +182,6 @@ async def dar(interaction: discord.Interaction, usuario: discord.Member, cantida
     guardar_datos()
     await interaction.response.send_message(f"✅ Se le han dado {cantidad} a {usuario.name}.")
 
-@bot.tree.command(name="quitar", description="Quita dinero a un usuario (Dueño)")
-async def quitar(interaction: discord.Interaction, usuario: discord.Member, cantidad: int):
-    # Verificación de ID de dueño
-    if interaction.user.id != 1491476806203740373:
-        await interaction.response.send_message("❌ No tienes permiso para usar este comando.", ephemeral=True)
-        return
 
     uid = str(usuario.id)
     if uid in datos:
@@ -195,8 +191,14 @@ async def quitar(interaction: discord.Interaction, usuario: discord.Member, cant
     else:
         await interaction.response.send_message("❌ Ese usuario no tiene registro de dinero.")
 # --- COMANDOS DE ACCIÓN ---
+@bot.tree.command(name="quitar", description="Quita dinero a un usuario")
+async def quitar(interaction: discord.Interaction, usuario: discord.Member, cantidad: int):
+    # Verificación de IDs permitidas
+    if interaction.user.id not in USUARIOS_PERMITIDOS:
+        await interaction.response.send_message("❌ No tienes permisos para usar este comando.", ephemeral=True)
+        return
 
-@bot.tree.command(name="dinero", description="Mira cuánto dinero tienes en mano")
+	@bot.tree.command(name="dinero", description="Mira cuánto dinero tienes en mano")
 async def dinero(interaction: discord.Interaction):
     uid = str(interaction.user.id)
     # Si el usuario no existe, le damos el saldo inicial
