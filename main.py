@@ -271,58 +271,7 @@ async def save_data(data):
     async with aiofiles.open('eco.json', mode='w') as f:
         await f.write(json.dumps(data, indent=4))
 
-# --- FORMULARIO Y COMANDO SAVETEXTO ---
-class TextFormModal(discord.ui.Modal, title='Configurar nuevo texto'):
-    nombre = discord.ui.TextInput(label='Nombre del embed', placeholder='Ej: Reglas')
-    activador = discord.ui.TextInput(label='Palabra activadora', placeholder='Ej: !reglas')
-    mensaje_texto = discord.ui.TextInput(label='Mensaje fuera del embed', style=discord.TextStyle.paragraph, placeholder='Ej: ¡Atención a todos!')
-    contenido = discord.ui.TextInput(label='Contenido del embed', style=discord.TextStyle.paragraph, placeholder='Cuerpo del embed...')
-    async def on_submit(self, interaction: discord.Interaction):
-        # Asegúrate de que esta línea tenga 8 espacios desde el inicio
-        embed = discord.Embed(title=self.nombre.value, description=self.contenido.value, color=discord.Color.red())
-        
-        # Guardado asíncrono
-        data = await load_data()
-        if 'custom_texts' not in data:
-            data['custom_texts'] = {}
-        
-        data['custom_texts'][self.activador.value.lower()] = {
-            "title": self.nombre.value, 
-            "content": self.contenido.value, 
-            "message_text": self.mensaje_texto.value
-        }
-        await save_data(data)
-        
-        # Este await debe estar alineado igual que el 'embed =' de arriba
-        await interaction.response.send_message(
-            f"✅ Guardado. Actívalo con `{self.activador.value}`.\n\n{self.mensaje_texto.value}", 
-            embed=embed, 
-            ephemeral=True
-	)
-		
-		
 
-
-@bot.tree.command(name="savetexto", description="Crea un nuevo texto automático con embed rojo")
-async def savetexto(interaction: discord.Interaction):
-    await interaction.response.send_modal(TextFormModal())
-
-# --- ON_MESSAGE (FILTRADO Y SEGURO) ---
-@bot.event
-async def on_message(message):
-    if message.author.bot: return
-
-    data = await load_data()
-    custom_texts = data.get('custom_texts', {})
-    activador = message.content.lower()
-    
-    if activador in custom_texts:
-        config = custom_texts[activador]
-        embed = discord.Embed(title=config['title'], description=config['content'], color=discord.Color.red())
-        await message.channel.send(content=config['message_text'], embed=embed)
-    
-    await bot.process_commands(message)
-	
 
 # --- COMANDO /TRANSFERIR ---
 @bot.tree.command(name="transferir", description="Transfiere dinero a otro usuario")
