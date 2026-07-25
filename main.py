@@ -71,16 +71,55 @@ async def sacarbanco(interaction: discord.Interaction, cantidad: int):
 
 
 
-@bot.tree.command(name="suerte", description="Prueba tu suerte")
-async def suerte(interaction: discord.Interaction, cantidad: int):
-    # --- VALIDACIÓN DE APUESTA (MÍNIMA Y MÁXIMA) ---
+@bot.tree.command(name="suerte", description="Prueba tu suerte apostando a cara o cruz")
+@app_commands.choices(caraocruz=[
+    app_commands.Choice(name="Cara", value="cara"),
+    app_commands.Choice(name="Cruz", value="cruz")
+])
+@app_commands.checks.cooldown(1, 180.0, key=lambda i: i.user.id)
+async def suerte(interaction: discord.Interaction, cantidad: int, caraocruz: str):
+    # --- MÉTODO DE SEGURIDAD (EVITAR NEGATIVOS Y VALORES EXTRAÑOS) ---
     if cantidad <= 0:
-        await interaction.response.send_message("❌ La cantidad debe ser mayor a 0.", ephemeral=False)
+        await interaction.response.send_message("❌ No puedes apostar cantidades negativas o cero.", ephemeral=True)
         return
-        
+
+    # --- VALIDACIÓN DE LÍMITE MÁXIMO ---
     if cantidad > 1000:
-        await interaction.response.send_message("❌ El límite máximo de apuesta es 1000.", ephemeral=False)
+        await interaction.response.send_message("❌ El límite máximo de apuesta es 1000.", ephemeral=True)
         return
+
+    # --- LÓGICA DEL JUEGO ---
+    uid = str(interaction.user.id)
+    eleccion_usuario = caraocruz.lower()
+    
+    if eleccion_usuario not in ["cara", "cruz"]:
+        await interaction.response.send_message("❌ Debes elegir entre 'cara' o 'cruz'.", ephemeral=True)
+        return
+
+    resultado = random.choice(["cara", "cruz"])
+
+    # Procesar apuesta
+    if eleccion_usuario == resultado:
+        ganancia = cantidad * 2
+        # datos[uid]["dinero"] += cantidad  # Ajusta según tu estructura
+        msg = f"🪙 ¡Salió **{resultado}**! Ganaste **{cantidad}**."
+    else:
+        # datos[uid]["dinero"] -= cantidad  # Ajusta según tu estructura
+        msg = f"🪙 ¡Salió **{resultado}**! Perdiste **{cantidad}**."
+
+    # guardar_datos()
+    await interaction.response.send_message(msg)
+
+# Manejador de errores para avisar del tiempo de espera restante si intentan usarlo antes de tiempo
+@suerte.error
+async def suerte_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CommandOnCooldown):
+        minutos = round(error.retry_after / 60, 1)
+        segundos = round(error.retry_after)
+        await interaction.response.send_message(f"⏳ Estás en cooldown. Debes esperar {segundos} segundos (aprox. {minutos} minutos) antes de volver a apostar.", ephemeral=True)
+    else:
+        raise error
+		
     # -----------------------------------------------
 
     # Aquí sigue tu código de saldo y lógica de juego...
