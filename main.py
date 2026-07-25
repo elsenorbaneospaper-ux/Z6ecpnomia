@@ -178,8 +178,8 @@ async def trabajar(interaction: discord.Interaction):
 
     # --- LÓGICA DE ARRESTO COMÚN ---
 async def procesar_arresto(interaction: discord.Interaction):
-    duracion = random.randint(3, 10) # Condena random
-    ROL_PRISIONERO_ID = 1523409852511158412
+    duracion = random.randint(1, 3) # Condena random
+    ROL_PRISIONERO_ID = 1530378140923461764
     rol_prisionero = interaction.guild.get_role(ROL_PRISIONERO_ID)
     
     await interaction.user.add_roles(rol_prisionero)
@@ -190,7 +190,7 @@ async def procesar_arresto(interaction: discord.Interaction):
     
     await interaction.user.remove_roles(rol_prisionero)
     try:
-        await interaction.user.send("🔓 Tu condena terminó. Ya puedes acceder al servidor.")
+        await interaction.user.send("🔓 Tu condena terminó. Ya puedes acceder a la economía del servidor.")
     except:
         pass
 # --- COMANDO /CRIMEN CORREGIDO Y FUNCIONAL ---
