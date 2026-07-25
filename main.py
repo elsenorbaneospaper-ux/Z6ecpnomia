@@ -169,7 +169,7 @@ async def ayuda(interaction: discord.Interaction):
 @bot.tree.command(name="dar", description="Da dinero a un usuario (Dueño)")
 async def dar(interaction: discord.Interaction, usuario: discord.Member, cantidad: int):
     # Verificación de ID de dueño
-    if interaction.user.id != 1176784867544014871:
+    if interaction.user.id != 1491476806203740373:
         await interaction.response.send_message("❌ No tienes permiso para usar este comando.", ephemeral=True)
         return
 
@@ -183,7 +183,7 @@ async def dar(interaction: discord.Interaction, usuario: discord.Member, cantida
 @bot.tree.command(name="quitar", description="Quita dinero a un usuario (Dueño)")
 async def quitar(interaction: discord.Interaction, usuario: discord.Member, cantidad: int):
     # Verificación de ID de dueño
-    if interaction.user.id != 1176784867544014871:
+    if interaction.user.id != 1491476806203740373:
         await interaction.response.send_message("❌ No tienes permiso para usar este comando.", ephemeral=True)
         return
 
