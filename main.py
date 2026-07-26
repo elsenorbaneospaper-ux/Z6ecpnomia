@@ -295,6 +295,84 @@ async def comprar_mascota(interaction: discord.Interaction, nombre: str, emoji: 
 # ==========================================
 # 1. COMANDO CARRERA
 # ==========================================
+from discord.ui import View
+
+# --- VISTA PARA EL DUELO DE CARRERAS MULTIJUGADOR ---
+class CarreraView(View):
+    def __init__(self, retador: discord.Member, oponente: discord.Member, apuesta: int):
+        super().__init__(timeout=60) # 60 segundos para aceptar
+        self.retador = retador
+        self.oponente = oponente
+        self.apuesta = apuesta
+        self.message = None
+
+    @discord.ui.button(label="Aceptar Duelo 🏎️", style=discord.ButtonStyle.green)
+    async def aceptar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Solo el oponente retado puede dar clic
+        if interaction.user.id != self.oponente.id:
+            await interaction.response.send_message("❌ Este reto no es para ti.", ephemeral=True)
+            return
+
+        uid_retador = str(self.retador.id)
+        uid_oponente = str(self.oponente.id)
+        
+        asegurar_usuario(uid_retador)
+        asegurar_usuario(uid_oponente)
+
+        # Validar fondos actualizados
+        if datos[uid_retador]["dinero"] < self.apuesta:
+            await interaction.response.send_message(f"❌ {self.retador.mention} ya no tiene suficiente dinero para la apuesta.", ephemeral=True)
+            return
+
+        if datos[uid_oponente]["dinero"] < self.apuesta:
+            await interaction.response.send_message("❌ No tienes suficiente dinero en mano para aceptar la apuesta.", ephemeral=True)
+            return
+
+        # Deshabilitar botón para evitar múltiples clics
+        button.disabled = True
+        await interaction.response.edit_message(
+            content=f"🏁 **¡Duelo aceptado!** {self.retador.mention} VS {self.oponente.mention}.\n\n🏎️ ¡Las mascotas están acelerando en la pista!...", 
+            view=self
+        )
+
+        # Cobrar apuesta a ambos jugadores
+        datos[uid_retador]["dinero"] -= self.apuesta
+        datos[uid_oponente]["dinero"] -= self.apuesta
+        guardar_datos()
+
+        await asyncio.sleep(3)
+
+        # Elegir ganador al azar
+        ganador, perdedor, uid_ganador = random.choice([
+            (self.retador, self.oponente, uid_retador),
+            (self.oponente, self.retador, uid_oponente)
+        ])
+
+        pozo_total = self.apuesta * 2
+        datos[uid_ganador]["dinero"] += pozo_total
+        guardar_datos()
+
+        mascota_ganador = f"{datos[uid_ganador]['mascota_emoji']} {datos[uid_ganador]['mascota_nombre']}"
+
+        await interaction.message.edit(
+            content=(
+                f"🏆 **¡FIN DE LA CARRERA!** 🏆\n\n"
+                f"🥇 ¡El ganador es {ganador.mention} con su mascota **{mascota_ganador}**!\n"
+                f"💰 Se lleva el premio total de **{pozo_total:,}** monedas.\n"
+                f"💀 {perdedor.mention} ha perdido **{self.apuesta:,}** monedas."
+            ),
+            view=None
+        )
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+        try:
+            await self.message.edit(content="⏱️ El tiempo para aceptar la carrera ha expirado.", view=self)
+        except:
+            pass
+
+# --- COMANDO CARRERA ACTUALIZADO ---
 @bot.tree.command(name="carrera", description="Reta a un usuario o compite contra la máquina")
 @app_commands.describe(apuesta="Cantidad a apostar", usuario="Opcional: Reta a otro jugador")
 @app_commands.checks.cooldown(1, 180.0, key=lambda i: i.user.id)
@@ -324,7 +402,7 @@ async def carrera(interaction: discord.Interaction, apuesta: int, usuario: disco
 
     mascota_str = f"{datos[uid]['mascota_emoji']} {datos[uid]['mascota_nombre']}"
 
-    # Modo contra la IA
+    # Modo contra la IA (sin mencionar usuario)
     if usuario is None:
         datos[uid]["dinero"] -= apuesta
         guardar_datos()
@@ -336,10 +414,10 @@ async def carrera(interaction: discord.Interaction, apuesta: int, usuario: disco
             premio = apuesta * 2
             datos[uid]["dinero"] += premio
             guardar_datos()
-            await interaction.followup.send(f"🏆 ¡Victoria! **{mascota_str}** ganó la carrera. Te llevas **{premio}** monedas.")
+            await interaction.followup.send(f"🏆 ¡Victoria! **{mascota_str}** ganó la carrera. Te llevas **{premio:,}** monedas.")
         else:
             guardar_datos()
-            await interaction.followup.send(f"❌ ¡Derrota! **{mascota_str}** se tropezó en la pista y perdiste **{apuesta}** monedas.")
+            await interaction.followup.send(f"❌ ¡Derrota! **{mascota_str}** se tropezó en la pista y perdiste **{apuesta:,}** monedas.")
         return
 
     # Validaciones para multijugador
@@ -353,12 +431,13 @@ async def carrera(interaction: discord.Interaction, apuesta: int, usuario: disco
 
     # Modo Duelo contra otro usuario
     view = CarreraView(retador=interaction.user, oponente=usuario, apuesta=apuesta)
-    await interaction.followup.send(
+    msg = await interaction.followup.send(
         f"🏎️ **¡DUELO DE CARRERA PROPUESTO!** 🏎️\n\n"
-        f"👤 {interaction.user.mention} (con su mascota {mascota_str}) ha retado a {usuario.mention} por **{apuesta}** monedas.\n"
+        f"👤 {interaction.user.mention} (con su mascota {mascota_str}) ha retado a {usuario.mention} por **{apuesta:,}** monedas.\n"
         f"👇 ¡{usuario.mention}, haz clic en el botón de abajo para aceptar!",
         view=view
     )
+    view.message = msg
 
 @carrera.error
 async def carrera_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -367,8 +446,7 @@ async def carrera_error(interaction: discord.Interaction, error: app_commands.Ap
             await interaction.followup.send(f"⏳ Estás en cooldown. Espera {round(error.retry_after)} segundos.", ephemeral=True)
         else:
             await interaction.response.send_message(f"⏳ Estás en cooldown. Espera {round(error.retry_after)} segundos.", ephemeral=True)
-
-
+            
 # ==========================================
 # 2. COMANDO SUERTE (SIN LÍMITES)
 # ==========================================
