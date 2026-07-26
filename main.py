@@ -9,6 +9,7 @@ import os
 import asyncio
 from flask import Flask
 from threading import Thread
+import time
 
 # Configuración
 intents = discord.Intents.default()
@@ -61,33 +62,89 @@ def asegurar_usuario(uid):
             datos[uid]["carreras_gratis"] = 5
             datos[uid]["tiene_mascota_propia"] = False
 
-# --- VISTA PARA EL SORTEO ---
+
+# --- VISTA SECUNDARIA PARA SALIR DEL SORTEO ---
+class ConfirmarSalidaView(View):
+    def __init__(self, sorteo_view, user_id):
+        super().__init__(timeout=30)
+        self.sorteo_view = sorteo_view
+        self.user_id = user_id
+
+    @discord.ui.button(label="Salir del sorteo ❌", style=discord.ButtonStyle.red)
+    async def salir(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id in self.sorteo_view.participantes:
+            self.sorteo_view.participantes.remove(interaction.user.id)
+            
+            # Actualizamos el mensaje principal del sorteo con el nuevo contador
+            total_participantes = len(self.sorteo_view.participantes)
+            contenido = (
+                f"🎁 **¡NUEVO SORTEO DE ECONOMÍA!** 🎁\n\n"
+                f"💰 Premio en juego: **{self.sorteo_view.premio}**\n"
+                f"👥 Participantes actuales: **{total_participantes}**\n"
+                f"⏱️ Termina: <t:{self.sorteo_view.timestamp_fin}:R>\n"
+                f"👇 Haz clic en el botón **Participar** para unirte."
+            )
+            try:
+                await self.sorteo_view.message.edit(content=contenido, view=self.sorteo_view)
+            except:
+                pass
+
+            await interaction.response.edit_message(content="✅ Te has salido del sorteo correctamente.", view=None)
+        else:
+            await interaction.response.edit_message(content="❌ Ya no estabas participando en este sorteo.", view=None)
+
+    @discord.ui.button(label="Seguir participando ✨", style=discord.ButtonStyle.grey)
+    async def quedar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content="✨ Has decidido seguir participando en el sorteo. ¡Mucha suerte!", view=None)
+
+# --- VISTA PRINCIPAL PARA EL SORTEO ---
 class SorteoView(View):
-    def __init__(self, premio: int, permitidos: list):
-        super().__init__(timeout=None)
+    def __init__(self, premio: int, duracion_segundos: int, timestamp_fin: int):
+        super().__init__(timeout=duracion_segundos)
         self.premio = premio
-        self.permitidos = permitidos
         self.participantes = set()
+        self.duracion_segundos = duracion_segundos
+        self.timestamp_fin = timestamp_fin
+        self.message = None
+
+    async def actualizar_mensaje(self, interaction: discord.Interaction):
+        total_participantes = len(self.participantes)
+        contenido = (
+            f"🎁 **¡NUEVO SORTEO DE ECONOMÍA!** 🎁\n\n"
+            f"💰 Premio en juego: **{self.premio}**\n"
+            f"👥 Participantes actuales: **{total_participantes}**\n"
+            f"⏱️ Termina: <t:{self.timestamp_fin}:R>\n"
+            f"👇 Haz clic en el botón **Participar** para unirte."
+        )
+        await interaction.response.edit_message(content=contenido, view=self)
 
     @discord.ui.button(label="Participar 🎉", style=discord.ButtonStyle.green, custom_id="sorteo_participar_btn")
     async def participar(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = str(interaction.user.id)
         asegurar_usuario(uid)
+        
         if interaction.user.id in self.participantes:
-            self.participantes.remove(interaction.user.id)
-            await interaction.response.send_message("❌ Te has salido del sorteo.", ephemeral=True)
+            # Si ya está participando, lanzamos el menú ephemeral con las opciones
+            vista_salida = ConfirmarSalidaView(self, interaction.user.id)
+            await interaction.response.send_message(
+                "⚠️ Ya estás participando en este sorteo. ¿Qué deseas hacer?",
+                view=vista_salida,
+                ephemeral=True
+            )
         else:
             self.participantes.add(interaction.user.id)
-            await interaction.response.send_message("✅ ¡Te has unido al sorteo correctamente!", ephemeral=True)
+            await self.actualizar_mensaje(interaction)
+            await interaction.followup.send("✅ ¡Te has unido al sorteo correctamente!", ephemeral=True)
 
-    @discord.ui.button(label="Terminar Sorteo 🏆", style=discord.ButtonStyle.red, custom_id="sorteo_terminar_btn")
-    async def terminar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id not in self.permitidos:
-            await interaction.response.send_message("❌ No tienes permisos para finalizar este sorteo.", ephemeral=True)
-            return
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
 
         if not self.participantes:
-            await interaction.response.send_message("❌ No hay participantes registrados en el sorteo.", ephemeral=True)
+            try:
+                await self.message.edit(content="🎉 **¡SORTEO FINALIZADO!** 🎉\n\n❌ El tiempo ha terminado, pero no hubo participantes registrados.", view=self)
+            except:
+                pass
             return
 
         uid_ganador = random.choice(list(self.participantes))
@@ -98,21 +155,25 @@ class SorteoView(View):
         guardar_datos()
 
         try:
-            usuario_ganador = await interaction.guild.fetch_member(uid_ganador)
+            guild = self.message.guild
+            usuario_ganador = await guild.fetch_member(uid_ganador)
             nombre_ganador = usuario_ganador.mention
         except:
             nombre_ganador = f"<@{uid_ganador}>"
 
-        for child in self.children:
-            child.disabled = True
-
-        await interaction.response.edit_message(
-            content=f"🎉 **¡SORTEO FINALIZADO!** 🎉\n\n"
-                    f"💰 Premio entregado: **{self.premio}**\n"
-                    f"👑 ¡El ganador afortunado es {nombre_ganador}!",
-            view=self
-        )
+        try:
+            await self.message.edit(
+                content=f"🎉 **¡SORTEO FINALIZADO!** 🎉\n\n"
+                        f"💰 Premio entregado: **{self.premio}**\n"
+                        f"👥 Total de participantes: **{len(self.participantes)}**\n"
+                        f"👑 ¡El ganador afortunado es {nombre_ganador}!",
+                view=self
+            )
+        except:
+            pass
         self.stop()
+        
+
 
 # --- VISTA PARA LA CARRERA MULTIJUGADOR ---
 class CarreraView(View):
