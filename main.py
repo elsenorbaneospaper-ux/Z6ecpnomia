@@ -65,6 +65,8 @@ def asegurar_usuario(uid):
 
 
 
+
+
 # --- VISTA SECUNDARIA PARA SALIR DEL SORTEO ---
 class ConfirmarSalidaView(View):
     def __init__(self, sorteo_view, user_id):
@@ -177,7 +179,6 @@ class SorteoView(View):
 @bot.tree.command(name="sorteo_economia", description="Crea un sorteo con tiempo límite (Solo administradores)")
 @app_commands.describe(premio="Cantidad de monedas a sortear", tiempo="Duración (Ejemplo: 30s, 5m, 1h)")
 async def sorteo_economia(interaction: discord.Interaction, premio: int, tiempo: str):
-    # Verificamos si el usuario tiene permisos de Administrador en el servidor
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ No tienes permisos de administrador para usar este comando.", ephemeral=True)
         return
@@ -222,67 +223,8 @@ async def sorteo_economia(interaction: discord.Interaction, premio: int, tiempo:
         view=view
     )
     view.message = await interaction.original_response()
-    
+        
 
-
-# --- VISTA PARA LA CARRERA MULTIJUGADOR ---
-class CarreraView(View):
-    def __init__(self, retador: discord.Member, oponente: discord.Member, apuesta: int):
-        super().__init__(timeout=30)
-        self.retador = retador
-        self.oponente = oponente
-        self.apuesta = apuesta
-        self.aceptado = False
-
-    @discord.ui.button(label="Aceptar Reto 🏁", style=discord.ButtonStyle.green)
-    async def aceptar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.oponente.id:
-            await interaction.response.send_message("❌ ¡Este reto no es para ti!", ephemeral=True)
-            return
-
-        uid_retador = str(self.retador.id)
-        uid_oponente = str(self.oponente.id)
-        asegurar_usuario(uid_retador)
-        asegurar_usuario(uid_oponente)
-
-        if datos[uid_retador]["dinero"] < self.apuesta:
-            await interaction.response.send_message("❌ El retador ya no tiene suficiente dinero.", ephemeral=True)
-            self.stop()
-            return
-        if datos[uid_oponente]["dinero"] < self.apuesta:
-            await interaction.response.send_message("❌ No tienes suficiente dinero para aceptar.", ephemeral=True)
-            self.stop()
-            return
-
-        self.aceptado = True
-        for child in self.children:
-            child.disabled = True
-
-        await interaction.response.edit_message(content=f"🏎️ **¡{self.oponente.name} aceptó el reto!** ¡Comienza la carrera...", view=self)
-
-        datos[uid_retador]["dinero"] -= self.apuesta
-        datos[uid_oponente]["dinero"] -= self.apuesta
-        guardar_datos()
-
-        await asyncio.sleep(2)
-        ganador = random.choice([self.retador, self.oponente])
-        uid_ganador = str(ganador.id)
-
-        pozo_total = self.apuesta * 2
-        datos[uid_ganador]["dinero"] += pozo_total
-        guardar_datos()
-
-        await interaction.followup.send(
-            f"🏁 **¡RESULTADOS DE LA CARRERA!** 🏁\n\n"
-            f"⚡ Motores a fondo... ¡y el ganador cruzando la meta es **{ganador.name}**!\n"
-            f"💰 Se lleva el pozo total de **{pozo_total}** monedas."
-        )
-        self.stop()
-
-    async def on_timeout(self):
-        if not self.aceptado:
-            for child in self.children:
-                child.disabled = True
 
 # --- COMANDOS DE BANCO ---
 @bot.tree.command(name="verbanco", description="Mira cuánto tienes guardado")
