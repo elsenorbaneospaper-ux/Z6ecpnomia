@@ -36,24 +36,20 @@ if os.path.exists(DB_FILE):
 def guardar_datos():
     with open(DB_FILE, "w") as f: json.dump(datos, f)
 
-@bot.event
-async def on_ready():
-    await bot.tree.sync()
-    print("Bot listo con todos los comandos.")
-
 # --- ESTRUCTURA BASE DE USUARIO ---
 def asegurar_usuario(uid):
     if uid not in datos:
         nombres_azar = ["Rayo", "Veloz", "Centella", "Fogonazo", "Turbo"]
         emojis_azar = ["🐶", "🐱", "🐰", "🦊", "🐼"]
         datos[uid] = {
-            "dinero": 1000, 
-            "banco": 0, 
+            "dinero": 1000,
+            "banco": 0,
             "mascota_nivel": 1,
             "mascota_nombre": random.choice(nombres_azar),
             "mascota_emoji": random.choice(emojis_azar),
             "carreras_gratis": 5,
-            "tiene_mascota_propia": False
+            "tiene_mascota_propia": False,
+            "minerales_descubiertos": []  # <-- AQUÍ DEBE IR CORRECTAMENTE
         }
     else:
         if "mascota_nombre" not in datos[uid]:
@@ -61,6 +57,17 @@ def asegurar_usuario(uid):
             datos[uid]["mascota_emoji"] = "🐶"
             datos[uid]["carreras_gratis"] = 5
             datos[uid]["tiene_mascota_propia"] = False
+        
+        # Y aseguramos que los usuarios antiguos también tengan la lista si no la tienen
+        if "minerales_descubiertos" not in datos[uid]:
+            datos[uid]["minerales_descubiertos"] = []
+            
+
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print("Bot listo con todos los comandos.")
+
 
 
 
@@ -258,41 +265,7 @@ async def sacarbanco(interaction: discord.Interaction, cantidad: int):
         guardar_datos()
         await interaction.response.send_message(f"✅ Retiraste {cantidad}.")
 
-# --- APUESTAS ---
-@bot.tree.command(name="suerte", description="Prueba tu suerte apostando a cara o cruz")
-@app_commands.choices(caraocruz=[
-    app_commands.Choice(name="Cara", value="cara"),
-    app_commands.Choice(name="Cruz", value="cruz")
-])
-@app_commands.checks.cooldown(1, 180.0, key=lambda i: i.user.id)
-async def suerte(interaction: discord.Interaction, cantidad: int, caraocruz: str):
-    if cantidad <= 0 or cantidad > 1000:
-        await interaction.response.send_message("❌ Apuesta inválida (Límite: 1 a 1000).", ephemeral=True)
-        return
 
-    uid = str(interaction.user.id)
-    asegurar_usuario(uid)
-    
-    if datos[uid]["dinero"] < cantidad:
-        await interaction.response.send_message("❌ No tienes suficiente dinero en mano.", ephemeral=True)
-        return
-
-    resultado = random.choice(["cara", "cruz"])
-    if caraocruz.lower() == resultado:
-        ganancia = cantidad * 2
-        datos[uid]["dinero"] += cantidad
-        msg = f"🪙 ¡Salió **{resultado}**! Ganaste **{ganancia}**."
-    else:
-        datos[uid]["dinero"] -= cantidad
-        msg = f"🪙 ¡Salió **{resultado}**! Perdiste **{cantidad}**."
-
-    guardar_datos()
-    await interaction.response.send_message(msg)
-
-@suerte.error
-async def suerte_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.CommandOnCooldown):
-        await interaction.response.send_message(f"⏳ Espera {round(error.retry_after)} segundos para volver a apostar.", ephemeral=True)
 
 # --- COMANDO: COMPRAR MASCOTA ---
 @bot.tree.command(name="comprar_mascota", description="Compra y personaliza tu propia mascota con nombre y emoji")
@@ -319,25 +292,29 @@ async def comprar_mascota(interaction: discord.Interaction, nombre: str, emoji: 
         f"¡Ahora tienes carreras ilimitadas y listas para la acción!"
     )
 
-# --- COMANDO CARRERA ---
+# ==========================================
+# 1. COMANDO CARRERA
+# ==========================================
 @bot.tree.command(name="carrera", description="Reta a un usuario o compite contra la máquina")
 @app_commands.describe(apuesta="Cantidad a apostar", usuario="Opcional: Reta a otro jugador")
 @app_commands.checks.cooldown(1, 180.0, key=lambda i: i.user.id)
 async def carrera(interaction: discord.Interaction, apuesta: int, usuario: discord.Member = None):
+    await interaction.response.defer()
+
     uid = str(interaction.user.id)
     asegurar_usuario(uid)
 
     if apuesta <= 0:
-        await interaction.response.send_message("❌ La apuesta debe ser mayor a 0.", ephemeral=True)
+        await interaction.followup.send("❌ La apuesta debe ser mayor a 0.", ephemeral=True)
         return
 
     if datos[uid]["dinero"] < apuesta:
-        await interaction.response.send_message("❌ No tienes suficiente dinero en mano para esta apuesta.", ephemeral=True)
+        await interaction.followup.send("❌ No tienes suficiente dinero en mano para esta apuesta.", ephemeral=True)
         return
 
     if not datos[uid]["tiene_mascota_propia"]:
         if datos[uid]["carreras_gratis"] <= 0:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ Se te han agotado tus **5 carreras gratuitas** con la mascota temporal.\n"
                 "Usa `/comprar_mascota [nombre] [emoji]` para conseguir una propia y desbloquear carreras ilimitadas.", 
                 ephemeral=True
@@ -347,11 +324,12 @@ async def carrera(interaction: discord.Interaction, apuesta: int, usuario: disco
 
     mascota_str = f"{datos[uid]['mascota_emoji']} {datos[uid]['mascota_nombre']}"
 
+    # Modo contra la IA
     if usuario is None:
         datos[uid]["dinero"] -= apuesta
         guardar_datos()
 
-        await interaction.response.send_message(f"🏁 Tu mascota **{mascota_str}** ha entrado a la pista contra la IA. ¡Acelerando...")
+        await interaction.followup.send(f"🏁 Tu mascota **{mascota_str}** ha entrado a la pista contra la IA. ¡Acelerando...")
         await asyncio.sleep(2)
 
         if random.random() < 0.50:
@@ -364,16 +342,18 @@ async def carrera(interaction: discord.Interaction, apuesta: int, usuario: disco
             await interaction.followup.send(f"❌ ¡Derrota! **{mascota_str}** se tropezó en la pista y perdiste **{apuesta}** monedas.")
         return
 
+    # Validaciones para multijugador
     if interaction.user.id == usuario.id:
-        await interaction.response.send_message("❌ No puedes retarte a ti mismo.", ephemeral=True)
+        await interaction.followup.send("❌ No puedes retarte a ti mismo.", ephemeral=True)
         return
 
     if usuario.bot:
-        await interaction.response.send_message("❌ No puedes retar a un bot de Discord.", ephemeral=True)
+        await interaction.followup.send("❌ No puedes retar a un bot de Discord.", ephemeral=True)
         return
 
+    # Modo Duelo contra otro usuario
     view = CarreraView(retador=interaction.user, oponente=usuario, apuesta=apuesta)
-    await interaction.response.send_message(
+    await interaction.followup.send(
         f"🏎️ **¡DUELO DE CARRERA PROPUESTO!** 🏎️\n\n"
         f"👤 {interaction.user.mention} (con su mascota {mascota_str}) ha retado a {usuario.mention} por **{apuesta}** monedas.\n"
         f"👇 ¡{usuario.mention}, haz clic en el botón de abajo para aceptar!",
@@ -383,7 +363,187 @@ async def carrera(interaction: discord.Interaction, apuesta: int, usuario: disco
 @carrera.error
 async def carrera_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.CommandOnCooldown):
-        await interaction.response.send_message(f"⏳ Estás en cooldown. Espera {round(error.retry_after)} segundos.", ephemeral=True)
+        if interaction.response.is_done():
+            await interaction.followup.send(f"⏳ Estás en cooldown. Espera {round(error.retry_after)} segundos.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"⏳ Estás en cooldown. Espera {round(error.retry_after)} segundos.", ephemeral=True)
+
+
+# ==========================================
+# 2. COMANDO SUERTE (SIN LÍMITES)
+# ==========================================
+@bot.tree.command(name="suerte", description="Prueba tu suerte apostando a cara o cruz sin límites")
+@app_commands.choices(caraocruz=[
+    app_commands.Choice(name="Cara", value="cara"),
+    app_commands.Choice(name="Cruz", value="cruz")
+])
+@app_commands.checks.cooldown(1, 180.0, key=lambda i: i.user.id)
+async def suerte(interaction: discord.Interaction, cantidad: int, caraocruz: str):
+    if cantidad <= 0:
+        await interaction.response.send_message("❌ La cantidad a apostar debe ser mayor a 0.", ephemeral=True)
+        return
+
+    uid = str(interaction.user.id)
+    asegurar_usuario(uid)
+    
+    if datos[uid]["dinero"] < cantidad:
+        await interaction.response.send_message("❌ No tienes suficiente dinero en mano.", ephemeral=True)
+        return
+
+    resultado = random.choice(["cara", "cruz"])
+    if caraocruz.lower() == resultado:
+        ganancia = cantidad * 2
+        datos[uid]["dinero"] += cantidad
+        msg = f"🪙 ¡Salió **{resultado}**! Ganaste **{ganancia}** monedas."
+    else:
+        datos[uid]["dinero"] -= cantidad
+        msg = f"🪙 ¡Salió **{resultado}**! Perdiste **{cantidad}** monedas."
+
+    guardar_datos()
+    await interaction.response.send_message(msg)
+
+@suerte.error
+async def suerte_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CommandOnCooldown):
+        await interaction.response.send_message(f"⏳ Espera {round(error.retry_after)} segundos para volver a apostar.", ephemeral=True)
+
+
+# ==========================================
+# 3. COMANDOS DE MINERÍA E ÍNDICE DE MINERALES
+# ==========================================
+MINERALES_DATA = [
+    # Comunes
+    {"nombre": "Piedra", "emoji": "🪨", "valor": 3000, "prob": 10.0},
+    {"nombre": "Carbón", "emoji": "⬛", "valor": 3500, "prob": 6.0},
+    {"nombre": "Arcilla", "emoji": "🧱", "valor": 4000, "prob": 4.0},
+    {"nombre": "Grava", "emoji": "🪨", "valor": 4500, "prob": 3.0},
+    {"nombre": "Sal gema", "emoji": "🧂", "valor": 5000, "prob": 2.0},
+    
+    # Poco comunes
+    {"nombre": "Cobre", "emoji": "🟠", "valor": 6500, "prob": 1.5},
+    {"nombre": "Hierro", "emoji": "⛓️", "valor": 8000, "prob": 1.0},
+    {"nombre": "Estaño", "emoji": "🥫", "valor": 9500, "prob": 0.8},
+    {"nombre": "Zinc", "emoji": "🔋", "valor": 11000, "prob": 0.6},
+    {"nombre": "Plomo", "emoji": "🛢️", "valor": 13000, "prob": 0.5},
+
+    # Raros
+    {"nombre": "Aluminio", "emoji": "✈️", "valor": 16000, "prob": 0.4},
+    {"nombre": "Níquel", "emoji": "🪙", "valor": 20000, "prob": 0.3},
+    {"nombre": "Azufre", "emoji": "🟡", "valor": 25000, "prob": 0.25},
+    {"nombre": "Cuarzo", "emoji": "🧊", "valor": 30000, "prob": 0.2},
+    {"nombre": "Salitre", "emoji": "🧪", "valor": 36000, "prob": 0.18},
+
+    # Muy raros
+    {"nombre": "Plata", "emoji": "🥈", "valor": 45000, "prob": 0.15},
+    {"nombre": "Oro", "emoji": "🥇", "valor": 55000, "prob": 0.12},
+    {"nombre": "Platino", "emoji": "💠", "valor": 70000, "prob": 0.10},
+    {"nombre": "Titanio", "emoji": "🛡️", "valor": 90000, "prob": 0.08},
+    {"nombre": "Cobalto", "emoji": "🔹", "valor": 115000, "prob": 0.06},
+
+    # Épicos
+    {"nombre": "Litio", "emoji": "⚡", "valor": 150000, "prob": 0.05},
+    {"nombre": "Uranio", "emoji": "☢️", "valor": 200000, "prob": 0.04},
+    {"nombre": "Jade", "emoji": "🟢", "valor": 270000, "prob": 0.03},
+    {"nombre": "Rubí", "emoji": "🔴", "valor": 350000, "prob": 0.025},
+    {"nombre": "Zafiro", "emoji": "🔵", "valor": 450000, "prob": 0.02},
+
+    # Legendarios (~3% o menos para los más altos)
+    {"nombre": "Esmeralda", "emoji": "💚", "valor": 600000, "prob": 0.015},
+    {"nombre": "Diamante", "emoji": "💎", "valor": 800000, "prob": 0.01},
+    {"nombre": "Aleandrita", "emoji": "🔮", "valor": 1100000, "prob": 0.007},
+    {"nombre": "Bovedita", "emoji": "🕳️", "valor": 1500000, "prob": 0.004},
+    {"nombre": "Estrella del Vacío", "emoji": "🌟", "valor": 2500000, "prob": 0.003},
+]
+
+@bot.tree.command(name="minar", description="Explora las profundidades en busca de minerales valiosos")
+@app_commands.checks.cooldown(1, 600.0, key=lambda i: i.user.id) # 10 minutos de cooldown
+async def minar(interaction: discord.Interaction):
+    await interaction.response.defer()
+    
+    uid = str(interaction.user.id)
+    asegurar_usuario(uid)
+    
+    if "minerales_descubiertos" not in datos[uid]:
+        datos[uid]["minerales_descubiertos"] = []
+
+    # 70% de probabilidad de fallo, 30% de acierto
+    if random.random() > 0.30:
+        guardar_datos()
+        await interaction.followup.send("⛏️ Te pusiste a cavar con fuerza, pero la roca cedió y **no encontraste nada útil** esta vez. ¡Sigue intentándolo!")
+        return
+
+    pesos = [m["prob"] for m in MINERALES_DATA]
+    mineral_encontrado = random.choices(MINERALES_DATA, weights=pesos, k=1)[0]
+
+    datos[uid]["dinero"] += mineral_encontrado["valor"]
+
+    nombre_mineral = mineral_encontrado["nombre"]
+    completado_ahora = False
+    if nombre_mineral not in datos[uid]["minerales_descubiertos"]:
+        datos[uid]["minerales_descubiertos"].append(nombre_mineral)
+        if len(datos[uid]["minerales_descubiertos"]) == len(MINERALES_DATA):
+            datos[uid]["dinero"] += 800000 # Bono por completar el índice
+            completado_ahora = True
+
+    guardar_datos()
+
+    mensaje = (
+        f"⛏️ **¡Has minado con éxito!**\n"
+        f"Encontraste: {mineral_encontrado['emoji']} **{mineral_encontrado['nombre']}**\n"
+        f"💰 Valor de venta: **{mineral_encontrado['valor']:,}** monedas añadidas a tu bolsillo."
+    )
+
+    if completado_ahora:
+        mensaje += "\n\n🎉 **¡INCREÍBLE!** ¡Has descubierto los 30 minerales y completado tu `/indice_minerales`! Has ganado un bono extra de **800,000** monedas."
+
+    await interaction.followup.send(mensaje)
+
+@minar.error
+async def minar_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CommandOnCooldown):
+        minutos = math.ceil(error.retry_after / 60) if 'math' in globals() else round(error.retry_after / 60, 1)
+        if interaction.response.is_done():
+            await interaction.followup.send(f"⏳ Estás cansado. Debes descansar y esperar unos **{minutos} minutos** antes de volver a minar.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"⏳ Estás cansado. Debes descansar y esperar unos **{minutos} minutos** antes de volver a minar.", ephemeral=True)
+
+@bot.tree.command(name="indice_minerales", description="Muestra tu progreso completando la colección de los 30 minerales")
+async def indice_minerales(interaction: discord.Interaction):
+    uid = str(interaction.user.id)
+    asegurar_usuario(uid)
+
+    if "minerales_descubiertos" not in datos[uid]:
+        datos[uid]["minerales_descubiertos"] = []
+
+    descubiertos = datos[uid]["minerales_descubiertos"]
+    total = len(MINERALES_DATA)
+    propios_encontrados = len(descubiertos)
+
+    lista_visual = []
+    for m in MINERALES_DATA:
+        if m["nombre"] in descubiertos:
+            lista_visual.append(f"{m['emoji']} **{m['nombre']}**")
+        else:
+            lista_visual.append(f"❓ `??????`")
+
+    bloque_1 = " | ".join(lista_visual[:15])
+    bloque_2 = " | ".join(lista_visual[15:])
+
+    embed = discord.Embed(
+        title="📜 Índice Geológico de Minerales",
+        description=f"Progreso de colección: **{propios_encontrados}/{total}**\n*¡Completa los 30 para ganar 800,000 monedas!*\n",
+        color=discord.Color.gold()
+    )
+    embed.add_field(name="Minerales (1 al 15)", value=bloque_1, inline=False)
+    embed.add_field(name="Minerales (16 al 30)", value=bloque_2, inline=False)
+
+    if propios_encontrados == total:
+        embed.set_footer(text="✨ ¡Índice completado al 100%! Has reclamado tu recompensa.")
+    else:
+        embed.set_footer(text=f"Te faltan {total - propios_encontrados} minerales por descubrir minando.")
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+        
 
 # --- COMANDO MEJORAR MASCOTA ---
 @bot.tree.command(name="mejorar_mascota", description="Sube de nivel a tu mascota")
@@ -581,37 +741,86 @@ async def transferir_error(interaction: discord.Interaction, error: app_commands
     if isinstance(error, app_commands.CommandOnCooldown):
         await interaction.response.send_message(f"⏳ Estás en cooldown de transferencias. Espera {round(error.retry_after)} segundos.", ephemeral=True)
 
-# --- COMANDO AYUDA ACTUALIZADO ---
-@bot.tree.command(name="ayuda", description="Muestra la lista completa de todos los comandos disponibles")
+@bot.tree.command(name="ayuda", description="Muestra la lista completa de comandos disponibles en el bot")
 async def ayuda(interaction: discord.Interaction):
-    mensaje = (
-        "📜 **Lista Completa de Comandos del Bot**\n\n"
-        "🐾 **Sistema de Mascotas:**\n"
-        "• `/comprar_mascota [nombre] [emoji]` - Crea y personaliza tu mascota propia (Desbloquea carreras ilimitadas).\n"
-        "• `/mejorar_mascota` - Sube de nivel a tu compañero para potenciar tus ganancias.\n\n"
-        "💼 **Trabajos:**\n"
-        "• `/trabajar` - Gana dinero trabajando honestamente (Bonus por mascota | Cooldown: 3m).\n\n"
-        "⚖️ **Acción, Riesgo y Apuestas:**\n"
-        "• `/crimen` - Intenta un crimen riesgoso (Cooldown: 8m).\n"
-        "• `/robar [usuario]` - Intenta robarle a otro usuario (Cooldown: 6m).\n"
-        "• `/robarbanco [usuario]` - Atraca el banco de otro usuario (Cooldown: 10m).\n"
-        "• `/suerte [monto] [cara/cruz]` - Apuesta tu dinero (Cooldown: 3m).\n"
-        "• `/carrera [apuesta] [usuario_opcional]` - Compite contra la IA (primeras 5 gratis) o reta a un jugador.\n\n"
-        "💰 **Economía y Bancos:**\n"
-        "• `/dinero` - Consulta tu dinero en mano.\n"
-        "• `/verbanco` - Consulta tu saldo en el banco.\n"
-        "• `/addbanco [cantidad]` - Deposita dinero.\n"
-        "• `/sacarbanco [cantidad]` - Retira dinero del banco.\n"
-        "• `/balance` - Mira tu fortuna total y nivel de mascota.\n"
-        "• `/top` - Ranking de los más ricos del servidor.\n"
-        "• `/transferir [usuario] [cantidad/all]` - Envía dinero (soporta 'all' | Cooldown: 2m).\n\n"
-        "🎁 **Eventos y Administración:**\n"
-        "• `/sorteo_economia [premio]` - Sorteo interactivo con botón (Solo Dueños).\n"
-        "• `/dar [usuario] [cantidad]` - Da dinero (Solo Dueños).\n"
-        "• `/quitar [usuario] [cantidad/all]` - Retira dinero, acepta 'all' (Solo Dueños).\n"
-        "• `/reset-eco` - Resetea la economía completa del servidor (Solo Dueños)."
+    embed = discord.Embed(
+        title="🤖 Menú de Ayuda - Z6 Economy",
+        description="Aquí tienes la lista completa de todos los comandos organizados por categoría:",
+        color=discord.Color.blue()
     )
-    await interaction.response.send_message(mensaje, ephemeral=False)
+
+    # Economía y Bancos
+    embed.add_field(
+        name="💰 Economía y Bancos",
+        value=(
+            "`/dinero` - Consulta tu dinero en mano.\n"
+            "`/verbanco` - Consulta tu saldo en el banco.\n"
+            "`/addbanco [cantidad]` - Deposita dinero en el banco.\n"
+            "`/sacarbanco [cantidad]` - Retira dinero del banco.\n"
+            "`/balance` - Mira tu fortuna total y nivel de mascota.\n"
+            "`/top` - Ranking de los más ricos del servidor.\n"
+            "`/transferir [usuario] [cantidad/all]` - Envía dinero (soporta 'all' | Cooldown: 2m)."
+        ),
+        inline=False
+    )
+
+    # Trabajos
+    embed.add_field(
+        name="💼 Trabajos",
+        value=(
+            "`/trabajar` - Gana dinero trabajando honestamente (Bonus por mascota | Cooldown: 3m)."
+        ),
+        inline=False
+    )
+
+    # Acción, Riesgo y Apuestas
+    embed.add_field(
+        name="⚖️ Acción, Riesgo y Apuestas",
+        value=(
+            "`/crimen` - Intenta un crimen riesgoso (Cooldown: 8m).\n"
+            "`/robar [usuario]` - Intenta robarle a otro usuario (Cooldown: 6m).\n"
+            "`/robarbanco [usuario]` - Atraca el banco de otro usuario (Cooldown: 10m).\n"
+            "`/suerte [monto] [cara/cruz]` - Apuesta tu dinero sin límites (Cooldown: 3m).\n"
+            "`/carrera [apuesta] [usuario_opcional]` - Compite contra la IA (primeras 5 gratis) o reta a un jugador."
+        ),
+        inline=False
+    )
+
+    # Minería y Colección
+    embed.add_field(
+        name="⛏️ Minería y Colección",
+        value=(
+            "`/minar` - Explora las profundidades en busca de valiosos minerales (Cooldown: 10m).\n"
+            "`/indice_minerales` - Revisa tu progreso descubriendo los 30 minerales raros."
+        ),
+        inline=False
+    )
+
+    # Sistema de Mascotas
+    embed.add_field(
+        name="🐾 Sistema de Mascotas",
+        value=(
+            "`/comprar_mascota [nombre] [emoji]` - Crea y personaliza tu mascota propia (Desbloquea carreras ilimitadas).\n"
+            "`/mejorar_mascota` - Sube de nivel a tu compañero para potenciar tus ganancias."
+        ),
+        inline=False
+    )
+
+    # Eventos y Administración
+    embed.add_field(
+        name="🎁 Eventos y Administración",
+        value=(
+            "`/sorteo_economia [premio]` - Sorteo interactivo con botón (Solo Dueños).\n"
+            "`/dar [usuario] [cantidad]` - Da dinero (Solo Dueños).\n"
+            "`/quitar [usuario] [cantidad/all]` - Retira dinero, acepta 'all' (Solo Dueños).\n"
+            "`/reset-eco` - Resetea la economía completa del servidor (Solo Dueños)."
+        ),
+        inline=False
+    )
+
+    embed.set_footer(text="¡Usa los comandos correctamente y diviértete en el servidor!")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    
 
 # --- ADMINISTRACIÓN DUEÑOS ---
 USUARIOS_PERMITIDOS = [1491476806203740373, 1439675836746829986]
