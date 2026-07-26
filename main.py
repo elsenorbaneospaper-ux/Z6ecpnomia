@@ -683,23 +683,5 @@ async def reset_eco(interaction: discord.Interaction):
     
     await interaction.response.send_message("🔄 **¡Economía reseteada con éxito!** Todos los saldos y cuentas han sido borrados.")
 
-@bot.tree.command(name="sorteo_economia", description="Crea un sorteo interactivo donde los usuarios participan con un botón")
-async def sorteo_economia(interaction: discord.Interaction, premio: int):
-    if interaction.user.id not in USUARIOS_PERMITIDOS:
-        await interaction.response.send_message("❌ No tienes permisos para usar este comando.", ephemeral=True)
-        return
-
-    if premio <= 0:
-        await interaction.response.send_message("❌ El premio del sorteo debe ser mayor a 0.", ephemeral=True)
-        return
-
-    view = SorteoView(premio=premio, permitidos=USUARIOS_PERMITIDOS)
-    
-    await interaction.response.send_message(
-        f"🎁 **¡NUEVO SORTEO DE ECONOMÍA!** 🎁\n\n"
-        f"💰 Premio en juego: **{premio}**\n"
-        f"👇 Haz clic en el botón **Participar** para unirte. ¡Si vuelves a hacer clic te saldrás del sorteo!",
-        view=view
-    )
 
 bot.run(os.environ['DISCORD_TOKEN'])
