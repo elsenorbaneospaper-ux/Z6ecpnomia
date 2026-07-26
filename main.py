@@ -63,6 +63,8 @@ def asegurar_usuario(uid):
             datos[uid]["tiene_mascota_propia"] = False
 
 
+
+
 # --- VISTA SECUNDARIA PARA SALIR DEL SORTEO ---
 class ConfirmarSalidaView(View):
     def __init__(self, sorteo_view, user_id):
@@ -75,7 +77,6 @@ class ConfirmarSalidaView(View):
         if interaction.user.id in self.sorteo_view.participantes:
             self.sorteo_view.participantes.remove(interaction.user.id)
             
-            # Actualizamos el mensaje principal del sorteo con el nuevo contador
             total_participantes = len(self.sorteo_view.participantes)
             contenido = (
                 f"🎁 **¡NUEVO SORTEO DE ECONOMÍA!** 🎁\n\n"
@@ -124,7 +125,6 @@ class SorteoView(View):
         asegurar_usuario(uid)
         
         if interaction.user.id in self.participantes:
-            # Si ya está participando, lanzamos el menú ephemeral con las opciones
             vista_salida = ConfirmarSalidaView(self, interaction.user.id)
             await interaction.response.send_message(
                 "⚠️ Ya estás participando en este sorteo. ¿Qué deseas hacer?",
@@ -172,7 +172,57 @@ class SorteoView(View):
         except:
             pass
         self.stop()
-        
+
+# --- COMANDO SORTEO RESTRINGIDO A ADMINISTRADORES ---
+@bot.tree.command(name="sorteo_economia", description="Crea un sorteo con tiempo límite (Solo administradores)")
+@app_commands.describe(premio="Cantidad de monedas a sortear", tiempo="Duración (Ejemplo: 30s, 5m, 1h)")
+async def sorteo_economia(interaction: discord.Interaction, premio: int, tiempo: str):
+    # Verificamos si el usuario tiene permisos de Administrador en el servidor
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ No tienes permisos de administrador para usar este comando.", ephemeral=True)
+        return
+
+    if premio <= 0:
+        await interaction.response.send_message("❌ El premio del sorteo debe ser mayor a 0.", ephemeral=True)
+        return
+
+    tiempo = tiempo.lower()
+    multiplicador = 1
+    if tiempo.endswith('s'):
+        multiplicador = 1
+    elif tiempo.endswith('m'):
+        multiplicador = 60
+    elif tiempo.endswith('h'):
+        multiplicador = 3600
+    else:
+        await interaction.response.send_message("❌ Formato inválido. Usa 's', 'm' o 'h' (Ej: `30s`, `5m`, `1h`).", ephemeral=True)
+        return
+
+    try:
+        cantidad_tiempo = int(tiempo[:-1])
+        duracion_segundos = cantidad_tiempo * multiplicador
+    except ValueError:
+        await interaction.response.send_message("❌ Número de tiempo inválido. Asegúrate de poner un número seguido de s, m o h.", ephemeral=True)
+        return
+
+    if duracion_segundos <= 0:
+        await interaction.response.send_message("❌ El tiempo del sorteo debe ser mayor a 0.", ephemeral=True)
+        return
+
+    timestamp_fin = int(time.time()) + duracion_segundos
+
+    view = SorteoView(premio=premio, duracion_segundos=duracion_segundos, timestamp_fin=timestamp_fin)
+    
+    await interaction.response.send_message(
+        f"🎁 **¡NUEVO SORTEO DE ECONOMÍA!** 🎁\n\n"
+        f"💰 Premio en juego: **{premio}**\n"
+        f"👥 Participantes actuales: **0**\n"
+        f"⏱️ Termina: <t:{timestamp_fin}:R>\n"
+        f"👇 Haz clic en el botón **Participar** para unirte.",
+        view=view
+    )
+    view.message = await interaction.original_response()
+    
 
 
 # --- VISTA PARA LA CARRERA MULTIJUGADOR ---
