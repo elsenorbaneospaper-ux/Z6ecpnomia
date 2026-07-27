@@ -945,7 +945,7 @@ class ViewConfirmarTrade(discord.ui.View):
         self.aceptaron.add(uid)
 
         if len(self.aceptaron) < 2:
-            await interaction.response.send_message(f"👍 Has aceptado el trade. Falta que el otro usuario acepte.", ephemeral=False)
+            await interaction.response.send_message(f"👍 Has aceptado el trade. Falta que el otro usuario acepte.", ephemeral=True)
             return
 
         await asegurar_usuario(self.uid_origen)
