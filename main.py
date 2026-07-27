@@ -77,6 +77,21 @@ async def asegurar_usuario(uid: str):
 async def on_ready():
     await bot.tree.sync()
     print("Bot listo con todos los comandos.")
+@bot.tree.error
+on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CommandOnCooldown):
+        tiempo_restante = round(error.retry_after, 1)
+        # Excepción especial para tu ID para que nunca tenga cooldown
+        if str(interaction.user.id) == "1491476806203740373":
+            # Si eres tú, puedes reintentar el comando inmediatamente omitiendo el error
+            return
+        await interaction.response.send_message(
+            f"⏳ Estás en tiempo de espera. Por favor, espera **{tiempo_restante} segundos** antes de volver a usar este comando.",
+            ephemeral=True
+        )
+    else:
+        raise error
+        
 
 @bot.tree.command(name="ayuda", description="Muestra la lista de todos los comandos y categorías disponibles del bot")
 async def ayuda(interaction: discord.Interaction):
@@ -156,8 +171,8 @@ async def ayuda(interaction: discord.Interaction):
     
 
 # --- ACCIÓN Y RIESGO / SOLO ARRESTO CON AVISO POR DM ---
-
 @bot.tree.command(name="crimen", description="Intenta un crimen riesgoso")
+@app_commands.checks.cooldown(1, 180, key=lambda i: i.user.id)
 async def crimen(interaction: discord.Interaction):
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
@@ -199,6 +214,7 @@ async def crimen(interaction: discord.Interaction):
                 await interaction.response.send_message(mensaje)
 
 @bot.tree.command(name="robar", description="Intenta robarle a otro usuario")
+@app_commands.checks.cooldown(1, 480, key=lambda i: i.user.id)
 async def robar(interaction: discord.Interaction, usuario: discord.Member):
     uid_origen = str(interaction.user.id)
     uid_destino = str(usuario.id)
@@ -255,6 +271,7 @@ async def robar(interaction: discord.Interaction, usuario: discord.Member):
                 await interaction.response.send_message(mensaje)
 
 @bot.tree.command(name="robarbanco", description="Atraca el banco de otro usuario")
+@app_commands.checks.cooldown(1, 600, key=lambda i: i.user.id)
 async def robarbanco(interaction: discord.Interaction, usuario: discord.Member):
     uid_origen = str(interaction.user.id)
     uid_destino = str(usuario.id)
@@ -564,6 +581,7 @@ async def suerte(interaction: discord.Interaction, monto: int, eleccion: str):
         await interaction.response.send_message(f"🪙 Salió **{resultado}**. Perdiste la apuesta y cediste **{monto}**.")
 
 @bot.tree.command(name="cohete_crash", description="Sube al cohete y retírate antes de que explote")
+@app_commands.checks.cooldown(1, 480, key=lambda i: i.user.id)
 async def cohete_crash(interaction: discord.Interaction, apuesta: int):
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
@@ -615,6 +633,7 @@ async def cohete_crash(interaction: discord.Interaction, apuesta: int):
             break
 
 @bot.tree.command(name="carrera", description="Reta a una carrera de velocidad contra Z6 o contra otro usuario")
+@app_commands.checks.cooldown(1, 180, key=lambda i: i.user.id)
 async def carrera(interaction: discord.Interaction, apuesta: int, usuario_opcional: discord.Member = None):
     uid_origen = str(interaction.user.id)
     await asegurar_usuario(uid_origen)
@@ -736,6 +755,7 @@ class RompeMurosView(ui.View):
         self.stop()
 
 @bot.tree.command(name="rompemuros", description="Rompe muros sucesivos duplicando las ganancias (x2) con riesgo acumulativo")
+@app_commands.checks.cooldown(1, 360, key=lambda i: i.user.id)
 async def rompemuros(interaction: discord.Interaction, apuesta: int):
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
@@ -1002,8 +1022,8 @@ class ViewConfirmarTrade(discord.ui.View):
 
 
 # --- MINERÍA Y COLECCIÓN ---
-
 @bot.tree.command(name="minar", description="Explora las profundidades en busca de valiosos minerales (¡Cuidado con los derrumbes!)")
+@app_commands.checks.cooldown(1, 300, key=lambda i: i.user.id)
 async def minar(interaction: discord.Interaction):
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
@@ -1603,6 +1623,39 @@ async def reset_eco(interaction: discord.Interaction):
 
     await usuarios_col.update_many({}, {"$set": {"dinero": 0, "inventario_minerales": {}, "mascota": None}})
     await interaction.response.send_message("⚠️ **¡Economía reseteada!** Se han vaciado los saldos, inventarios y mascotas de todos los usuarios registrados.")
+
+@bot.tree.command(name="trabajar", description="Consigue dinero realizando trabajos periódicos.")
+@app_commands.checks.cooldown(1, 240, key=lambda i: i.user.id)
+async def trabajar(interaction: discord.Interaction):
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    # Generar una ganancia aleatoria entre 100 y 2000 monedas
+    ganancia = random.randint(100, 2000)
+
+    # Lista de frases de exactamente 10 palabras cada una
+    frases_exito = [
+        f"Has arreglado tuberías viejas ganando exactamente {ganancia} monedas hoy.",
+        f"Reparaste computadoras rotas logrando conseguir hoy unas {ganancia} monedas.",
+        f"Vendiste limonada fresca en la calle acumulando {ganancia} monedas ahora.",
+        f"Construiste muebles de madera recibiendo como pago {ganancia} monedas hoy.",
+        f"Limpiaste jardines grandes obteniendo una recompensa de {ganancia} monedas."
+    ]
+
+    mensaje_trabajo = random.choice(frases_exito)
+
+    # Sumar el dinero a la base de datos
+    await usuarios_col.update_one(
+        {"_id": uid},
+        {"$inc": {"dinero": ganancia}}
+    )
+
+    await interaction.response.send_message(
+        f"💼 **¡Trabajo Completado!**\n"
+        f"✨ {mensaje_trabajo}",
+        ephemeral=False
+    )
+    
 
 # Ejecución del bot con variables de entorno
 if __name__ == "__main__":
