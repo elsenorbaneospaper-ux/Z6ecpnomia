@@ -1563,8 +1563,10 @@ async def dar(interaction: discord.Interaction, usuario: discord.Member, cantida
 
 @bot.tree.command(name="quitar", description="Retira dinero a un usuario, acepta 'all' (Solo Dueños)")
 async def quitar(interaction: discord.Interaction, usuario: discord.Member, cantidad: str):
+    await interaction.response.defer(ephemeral=False)
+    
     if not es_dueno(interaction):
-        await interaction.response.send_message("❌ Comando exclusivo para dueños.", ephemeral=True)
+        await interaction.followup.send("❌ Comando exclusivo para dueños.", ephemeral=True)
         return
 
     uid = str(usuario.id)
@@ -1574,25 +1576,25 @@ async def quitar(interaction: discord.Interaction, usuario: discord.Member, cant
     if cantidad.lower() == "all":
         retirado = u.get("dinero", 0)
         await usuarios_col.update_one({"_id": uid}, {"$set": {"dinero": 0}})
-        await interaction.response.send_message(f"✅ Se ha retirado todo el dinero (**{retirado}**) a {usuario.mention}.")
+        await interaction.followup.send(f"✅ Se ha retirado todo el dinero (**{retirado}**) a {usuario.mention}.")
         return
 
     try:
         monto = int(cantidad)
     except ValueError:
-        await interaction.response.send_message("❌ Debes ingresar una cantidad válida o la palabra 'all'.", ephemeral=True)
+        await interaction.followup.send("❌ Debes ingresar una cantidad válida o la palabra 'all'.", ephemeral=True)
         return
 
     if monto <= 0:
-        await interaction.response.send_message("❌ La cantidad debe ser mayor a 0.", ephemeral=True)
+        await interaction.followup.send("❌ La cantidad debe ser mayor a 0.", ephemeral=True)
         return
 
     dinero_actual = u.get("dinero", 0)
     a_retirar = min(monto, dinero_actual)
 
     await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": -a_retirar}})
-    await interaction.response.send_message(f"✅ Se han retirado **{a_retirar}** de dinero a {usuario.mention}.")
-
+    await interaction.followup.send(f"✅ Se han retirado **{a_retirar}** de dinero a {usuario.mention}.")
+    
 
 @bot.tree.command(name="reset-eco", description="Resetea la economía completa del servidor (Solo Dueños)")
 async def reset_eco(interaction: discord.Interaction):
