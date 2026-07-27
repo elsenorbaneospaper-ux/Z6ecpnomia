@@ -752,7 +752,6 @@ class RompeMurosView(ui.View):
             view=self
         )
         self.stop()
-
 @bot.tree.command(name="rompemuros", description="Rompe muros sucesivos duplicando las ganancias (x2) con riesgo acumulativo")
 @app_commands.checks.cooldown(1, 360, key=lambda i: i.user.id)
 async def rompemuros(interaction: discord.Interaction, apuesta: int):
@@ -774,7 +773,7 @@ async def rompemuros(interaction: discord.Interaction, apuesta: int):
     await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": -apuesta}})
 
     view = RompeMurosView(uid, apuesta)
-    
+
     await interaction.response.send_message(
         f"⛏️ **¡Comienza el desafío Rompemuros!**\n"
         f"🧱 Muro actual: **1**\n"
@@ -784,9 +783,9 @@ async def rompemuros(interaction: discord.Interaction, apuesta: int):
         view=view,
         ephemeral=False
     )
-    
+
     view.mensaje = await interaction.original_response()
-        
+    
     # --- MODO: JUGADOR VS JUGADOR (Con botón de aceptar y mensaje nuevo al terminar) ---
     uid_destino = str(usuario_opcional.id)
     if uid_origen == uid_destino:
