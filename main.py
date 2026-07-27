@@ -785,27 +785,6 @@ async def rompemuros(interaction: discord.Interaction, apuesta: int):
     )
 
     view.mensaje = await interaction.original_response()
-    
-    # --- MODO: JUGADOR VS JUGADOR (Con botón de aceptar y mensaje nuevo al terminar) ---
-@bot.tree.command(name="carrera", description="Inicia una carrera contra otro usuario") 
-async def carrera(interaction: discord.Interaction, apuesta: int, usuario_opcional: discord.Member):
-    uid_origen = str(interaction.user.id)  
-    if uid_origen == uid_destino:
-        await interaction.response.send_message("❌ No puedes competir contra ti mismo.", ephemeral=True)
-        return
-        
-    await asegurar_usuario(uid_destino)
-    u_destino = await usuarios_col.find_one({"_id": uid_destino})
-    
-    if u_destino.get("dinero", 0) < apuesta:
-        await interaction.response.send_message(f"❌ {usuario_opcional.mention} no tiene suficiente dinero para igualar la apuesta.", ephemeral=True)
-        return
-
-    view = DueloView(interaction, uid_origen, uid_destino, apuesta, usuario_opcional)
-    await interaction.response.send_message(
-        f"🏁 {usuario_opcional.mention}, {interaction.user.mention} te ha retado a una carrera por una apuesta de **{apuesta}**.\n*Pulsa el botón de abajo para aceptar el duelo:*",
-        view=view
-        )
 
     # --- CLASES PARA EL SISTEMA DE MINERÍA Y TRADE ---
 
