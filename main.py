@@ -11,6 +11,7 @@ from flask import Flask
 from threading import Thread
 import time
 import motor.motor_asyncio
+from discord import ui, ButtonStyle
 
 # Configuración
 intents = discord.Intents.default()
@@ -373,8 +374,9 @@ async def balance(interaction: discord.Interaction, usuario: discord.Member = No
 @bot.tree.command(name="top", description="Ranking de los más ricos del servidor")
 async def top(interaction: discord.Interaction):
     cursor = usuarios_col.find().sort([("dinero", -1), ("banco", -1)]).limit(5)
+    usuarios = await cursor.to_list(length=None)
     texto = "🏆 **Top 5 más ricos del servidor:**\n\n"
-    async for i, user in enumerate(cursor, 1):
+    async for i, user in enumerate(usuarios, 1):
         total = user.get("dinero", 0) + user.get("banco", 0)
         try:
             member = await bot.fetch_user(int(user["_id"]))
@@ -617,6 +619,117 @@ async def carrera(interaction: discord.Interaction, apuesta: int, usuario_opcion
             )
         return
 
+class RompeMurosView(ui.View):
+    def __init__(self, uid: str, apuesta: int):
+        super().__init__(timeout=45)
+        self.uid = uid
+        self.apuesta = apuesta
+        self.ronda = 1
+        self.multiplicador_actual = 1.0
+        self.terminado = False
+        self.mensaje = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if str(interaction.user.id) != self.uid:
+            await interaction.response.send_message("❌ Esta excavación no es tuya.", ephemeral=True)
+            return False
+        return True
+
+    @ui.button(label="🔨 Romper Siguiente Muro", style=ButtonStyle.blurple)
+    async def romper(self, interaction: discord.Interaction, button: ui.Button):
+        if self.terminado:
+            return
+
+        # Probabilidad de éxito por cada muro (ej: 75%, luego 60%, 45%, etc.)
+        probabilidad = max(0.20, 0.80 - (self.ronda * 0.15))
+        
+        if random.random() < probabilidad:
+            # ¡Muro roto con éxito! Duplica el multiplicador (1x -> 2x -> 4x -> 8x...)
+            self.ronda += 1
+            self.multiplicador_actual *= 2.0
+            
+            premio_parcial = int(self.apuesta * self.multiplicador_actual)
+
+            await interaction.response.edit_message(
+                content=f"🧱 **¡Muro {self.ronda - 1} destruido con éxito!**\n"
+                        f"📈 Multiplicador actual: **{self.multiplicador_actual:,.0f}x**\n"
+                        f"💰 Ganancia acumulada si te retiras ahora: **{premio_parcial:,.0f}** monedas\n"
+                        f"⚡ ¿Qué deseas hacer?",
+                view=self
+            )
+        else:
+            # El muro colapsa y se pierde todo
+            self.terminado = True
+            for child in self.children:
+                child.disabled = True
+
+            await interaction.response.edit_message(
+                content=f"💥 **¡DERRUMBE! El Muro #{self.ronda} era demasiado denso y colapsó sobre ti.**\n"
+                        f"💸 Perdiste tu apuesta inicial de **{self.apuesta}** monedas.",
+                view=self
+            )
+            self.stop()
+
+    @ui.button(label="💰 Cobrar y Salir", style=ButtonStyle.green)
+    async def cobrar(self, interaction: discord.Interaction, button: ui.Button):
+        if self.terminado:
+            return
+
+        self.terminado = True
+        premio_total = int(self.apuesta * self.multiplicador_actual)
+        ganancia_neta = premio_total - self.apuesta
+
+        # Sumar el premio a la base de datos
+        await usuarios_col.update_one(
+            {"_id": self.uid},
+            {"$inc": {"dinero": ganancia_neta}}
+        )
+
+        for child in self.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(
+            content=f"🎉 **¡EXCAVACIÓN EXITOSA!**\n"
+                    f"🧱 Muros superados: **{self.ronda - 1}**\n"
+                    f"📈 Multiplicador final: **{self.multiplicador_actual:,.0f}x**\n"
+                    f"💰 Te retiraste a tiempo con una ganancia neta de **+{ganancia_neta:,.0f}** *(Total: {premio_total:,.0f})*",
+            view=self
+        )
+        self.stop()
+
+@bot.tree.command(name="rompemuros", description="Rompe muros de roca sucesivos duplicando tus ganancias por cada muro superado")
+async def rompemuros(interaction: discord.Interaction, apuesta: int):
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    user_data = await usuarios_col.find_one({"_id": uid})
+    dinero_actual = user_data.get("dinero", 0)
+
+    if apuesta <= 0:
+        await interaction.response.send_message("❌ La apuesta debe ser mayor a 0.", ephemeral=False)
+        return
+
+    if dinero_actual < apuesta:
+        await interaction.response.send_message(f"❌ No tienes suficiente dinero. Tienes **{dinero_actual}** monedas.", ephemeral=False)
+        return
+
+    # Descontar el dinero al iniciar el juego
+    await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": -apuesta}})
+
+    view = RompeMurosView(uid, apuesta)
+    
+    await interaction.response.send_message(
+        f"⛏️ **¡Comienza el desafío Rompemuros!**\n"
+        f"🧱 Muro actual: **1**\n"
+        f"📈 Multiplicador: **1x** (Premio actual: {apuesta} monedas)\n"
+        f"⚡ Elige si quieres golpear el siguiente muro para duplicar o asegurar tus ganancias.",
+        view=view,
+        ephemeral=False
+    )
+    
+    view.mensaje = await interaction.original_response()
+        
+    
     # --- MODO: JUGADOR VS JUGADOR (Con botón de aceptar y mensaje nuevo al terminar) ---
     uid_destino = str(usuario_opcional.id)
     if uid_origen == uid_destino:
@@ -789,13 +902,13 @@ class ViewConfirmarTrade(discord.ui.View):
     async def aceptar(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = str(interaction.user.id)
         if uid not in [self.uid_origen, self.uid_destino]:
-            await interaction.response.send_message("❌ No participas en este intercambio.", ephemeral=True)
+            await interaction.response.send_message("❌ No participas en este intercambio.", ephemeral=False)
             return
 
         self.aceptaron.add(uid)
 
         if len(self.aceptaron) < 2:
-            await interaction.response.send_message(f"👍 Has aceptado el trade. Falta que el otro usuario acepte.", ephemeral=True)
+            await interaction.response.send_message(f"👍 Has aceptado el trade. Falta que el otro usuario acepte.", ephemeral=False)
             return
 
         await asegurar_usuario(self.uid_origen)
