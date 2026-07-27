@@ -117,7 +117,7 @@ async def ayuda(interaction: discord.Interaction):
         name="🎲 Apuestas, Acción y Riesgo",
         value=(
             "• **/carrera** [apuesta]: Compite en una carrera rápida arriesgando tu dinero.\n"
-            "• **/rompemuros** [apuesta]: Rompe cada muro y multiplica por 2 tus ganancias por cada muro destruido elije si seguir destruyendo o perderlo todo.. \n"
+            "• **/rompemuros** [apuesta]: Rompe cada muro y multiplica por 1.5 tus ganancias por cada muro destruido sera un 3% mas difícil romper el otro,elije si seguir destruyendo o perderlo todo.. \n"
             "• **/cohete_crash** [apuesta]: Juego de crash donde debes retirar antes de que explote el cohete.\n"
             "• **/suerte** [apuesta]: Pon a prueba tu fortuna en un juego de azar rápido.\n"
             "• **/crimen**: Comete un acto ilícito para ganar dinero (con riesgo de multa o policía).\n"
@@ -641,24 +641,10 @@ class RompeMurosView(ui.View):
         if self.terminado:
             return
 
-        # Probabilidad de éxito por cada muro (ej: 75%, luego 60%, 45%, etc.)
-        probabilidad = max(0.20, 0.80 - (self.ronda * 0.15))
+        # Probabilidad base de fallo del 65% (0.65), que sube un 3% (0.03) por cada ronda superada
+        probabilidad_fallo = min(0.95, 0.65 + ((self.ronda - 1) * 0.03))
         
-        if random.random() < probabilidad:
-            # ¡Muro roto con éxito! Duplica el multiplicador (1x -> 2x -> 4x -> 8x...)
-            self.ronda += 1
-            self.multiplicador_actual *= 2.0
-            
-            premio_parcial = int(self.apuesta * self.multiplicador_actual)
-
-            await interaction.response.edit_message(
-                content=f"🧱 **¡Muro {self.ronda - 1} destruido con éxito!**\n"
-                        f"📈 Multiplicador actual: **{self.multiplicador_actual:,.0f}x**\n"
-                        f"💰 Ganancia acumulada si te retiras ahora: **{premio_parcial:,.0f}** monedas\n"
-                        f"⚡ ¿Qué deseas hacer?",
-                view=self
-            )
-        else:
+        if random.random() < probabilidad_fallo:
             # El muro colapsa y se pierde todo
             self.terminado = True
             for child in self.children:
@@ -670,6 +656,22 @@ class RompeMurosView(ui.View):
                 view=self
             )
             self.stop()
+        else:
+            # ¡Muro roto con éxito! Multiplica por 1.5
+            self.ronda += 1
+            self.multiplicador_actual = round(self.multiplicador_actual * 1.5, 2)
+            
+            premio_parcial = int(self.apuesta * self.multiplicador_actual)
+            siguiente_fallo_porcentaje = int(min(95, 65 + ((self.ronda - 1) * 3)))
+
+            await interaction.response.edit_message(
+                content=f"🧱 **¡Muro {self.ronda - 1} destruido con éxito!**\n"
+                        f"📈 Multiplicador actual: **{self.multiplicador_actual}x**\n"
+                        f"💰 Ganancia acumulada si te retiras ahora: **{premio_parcial}** monedas\n"
+                        f"⚠️ Probabilidad de fallo para el siguiente muro: **{siguiente_fallo_porcentaje}%**\n"
+                        f"⚡ ¿Qué deseas hacer?",
+                view=self
+            )
 
     @ui.button(label="💰 Cobrar y Salir", style=ButtonStyle.green)
     async def cobrar(self, interaction: discord.Interaction, button: ui.Button):
@@ -692,13 +694,13 @@ class RompeMurosView(ui.View):
         await interaction.response.edit_message(
             content=f"🎉 **¡EXCAVACIÓN EXITOSA!**\n"
                     f"🧱 Muros superados: **{self.ronda - 1}**\n"
-                    f"📈 Multiplicador final: **{self.multiplicador_actual:,.0f}x**\n"
-                    f"💰 Te retiraste a tiempo con una ganancia neta de **+{ganancia_neta:,.0f}** *(Total: {premio_total:,.0f})*",
+                    f"📈 Multiplicador final: **{self.multiplicador_actual}x**\n"
+                    f"💰 Te retiraste a tiempo con una ganancia neta de **+{ganancia_neta}** *(Total: {premio_total})*",
             view=self
         )
         self.stop()
 
-@bot.tree.command(name="rompemuros", description="Rompe muros de roca sucesivos duplicando tus ganancias por cada muro superado")
+@bot.tree.command(name="rompemuros", description="Rompe muros sucesivos multiplicando x1.5 pero con riesgo acumulativo")
 async def rompemuros(interaction: discord.Interaction, apuesta: int):
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
@@ -722,14 +724,15 @@ async def rompemuros(interaction: discord.Interaction, apuesta: int):
     await interaction.response.send_message(
         f"⛏️ **¡Comienza el desafío Rompemuros!**\n"
         f"🧱 Muro actual: **1**\n"
-        f"📈 Multiplicador: **1x** (Premio actual: {apuesta} monedas)\n"
-        f"⚡ Elige si quieres golpear el siguiente muro para duplicar o asegurar tus ganancias.",
+        f"📈 Multiplicador: **1.0x** (Premio actual: {apuesta} monedas)\n"
+        f"⚠️ Probabilidad de fallo: **65%** *(Sube un 3% por cada muro superado)*\n"
+        f"⚡ Elige si quieres arriesgarte a romper el siguiente muro o cobrar.",
         view=view,
         ephemeral=False
     )
     
     view.mensaje = await interaction.original_response()
-        
+            
     
     # --- MODO: JUGADOR VS JUGADOR (Con botón de aceptar y mensaje nuevo al terminar) ---
     uid_destino = str(usuario_opcional.id)
