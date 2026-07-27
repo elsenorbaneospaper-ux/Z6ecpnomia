@@ -648,7 +648,7 @@ class MinarView(discord.ui.View):
     @discord.ui.button(label="💰 Vender", style=discord.ButtonStyle.green)
     async def vender(self, interaction: discord.Interaction, button: discord.ui.Button):
         if str(interaction.user.id) != self.uid:
-            await interaction.response.send_message("❌ Esta mena no es tuya.", ephemeral=True)
+            await interaction.response.send_message("❌ Esta mena no es tuya.", ephemeral=False)
             return
 
         await usuarios_col.update_one(
@@ -668,7 +668,7 @@ class MinarView(discord.ui.View):
     @discord.ui.button(label="🛡️ Mantener", style=discord.ButtonStyle.blurple)
     async def mantener(self, interaction: discord.Interaction, button: discord.ui.Button):
         if str(interaction.user.id) != self.uid:
-            await interaction.response.send_message("❌ Esta mena no es tuya.", ephemeral=True)
+            await interaction.response.send_message("❌ Esta mena no es tuya.", ephemeral=False)
             return
 
         await usuarios_col.update_one(
@@ -703,12 +703,12 @@ class MenuElegirMineralPropio(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if str(interaction.user.id) != self.uid_origen:
-            await interaction.response.send_message("❌ Este menú no es para ti.", ephemeral=True)
+            await interaction.response.send_message("❌ Este menú no es para ti.", ephemeral=False)
             return
 
         mineral_elegido = self.values[0]
         if mineral_elegido == "none":
-            await interaction.response.send_message("❌ No tienes minerales para tradear.", ephemeral=True)
+            await interaction.response.send_message("❌ No tienes minerales para tradear.", ephemeral=False)
             return
 
         u_destino = await usuarios_col.find_one({"_id": self.uid_destino})
@@ -745,12 +745,12 @@ class MenuElegirMineralDestino(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if str(interaction.user.id) != self.uid_destino:
-            await interaction.response.send_message("❌ Este menú no es para ti.", ephemeral=True)
+            await interaction.response.send_message("❌ Este menú no es para ti.", ephemeral=False)
             return
 
         mineral_cambio = self.values[0]
         if mineral_cambio == "none":
-            await interaction.response.send_message("❌ No tienes minerales para ofrecer a cambio.", ephemeral=True)
+            await interaction.response.send_message("❌ No tienes minerales para ofrecer a cambio.", ephemeral=False)
             return
 
         view_confirmar = ViewConfirmarTrade(self.uid_origen, self.uid_destino, self.mineral_ofrecido, mineral_cambio)
@@ -837,7 +837,7 @@ class ViewConfirmarTrade(discord.ui.View):
     async def cancelar(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = str(interaction.user.id)
         if uid not in [self.uid_origen, self.uid_destino]:
-            await interaction.response.send_message("❌ No participas en este intercambio.", ephemeral=True)
+            await interaction.response.send_message("❌ No participas en este intercambio.", ephemeral=False)
             return
 
         for child in self.children:
@@ -852,26 +852,78 @@ class ViewConfirmarTrade(discord.ui.View):
 
 # --- MINERÍA Y COLECCIÓN ---
 
-@bot.tree.command(name="minar", description="Explora las profundidades en busca de valiosos minerales")
+@bot.tree.command(name="minar", description="Explora las profundidades en busca de valiosos minerales (¡Cuidado con los derrumbes!)")
 async def minar(interaction: discord.Interaction):
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
 
+    # Probabilidad del 70% de fallo (0.70 o más)
+    if random.random() < 0.70:
+        await interaction.response.send_message("❌ ¡La mina ha colapsado o no has encontrado nada útil esta vez!", ephemeral=False)
+        return
+
+    # Lista de 35 minerales enfocada en minerales buenos y valiosos
     lista_minerales = [
-        ("Carbón", 50),
+        # Minerales básicos pero útiles
+        ("Carbón", 30),
+        ("Sal Gema", 60),
+        ("Azufre", 70),
+        ("Cobre", 80),
+        ("Caliza", 95),
+        # Minerales buenos y metálicos
         ("Hierro", 120),
-        ("Oro", 300),
-        ("Diamante", 750),
-        ("Netherita", 1500)
+        ("Estaño", 135),
+        ("Plomo", 150),
+        ("Níquel", 165),
+        ("Zinc", 180),
+        ("Aluminio", 210),
+        ("Plata", 250),
+        ("Cobalto", 300),
+        ("Oro", 350),
+        ("Jade", 400),
+        # Minerales valiosos y gemas
+        ("Redstone", 450),
+        ("Ámbar", 500),
+        ("Lapislázuli", 550),
+        ("Amatista", 620),
+        ("Titanio", 700),
+        ("Topacio", 800),
+        ("Diamante", 900),
+        ("Zafiro", 1050),
+        ("Rubí", 1100),
+        ("Platino", 1200),
+        # Minerales excelentes y raros
+        ("Esmeralda", 1500),
+        ("Opalita", 1850),
+        ("Netherita", 2200),
+        ("Aleación Estelar", 2800),
+        ("Rubí Místico", 3500),
+        # Minerales legendarios
+        ("Cristal de Maná", 4200),
+        ("Obsidiana Luminosa", 5000),
+        ("Corazón de Dragón", 6000),
+        ("Fragmento de Fénix", 7500),
+        ("Esencia Celestial", 10000)
     ]
     
-    mineral_nombre, valor_venta = random.choice(lista_minerales)
+    # Pesos equilibrados para que salgan mayormente buenos y valiosos
+    pesos = [
+        90, 85, 80, 75, 70,  # Básicos frecuentes
+        65, 60, 55, 50, 45, 42, 38, 35, 32, 30,  # Buenos y metálicos
+        28, 26, 24, 22, 20, 18, 16, 14, 12, 10,  # Valiosos y gemas
+        8, 7, 6, 5, 4,                           # Excelentes y raros
+        3, 2.5, 2, 1.5, 1                        # Legendarios supremos
+    ]
+    
+    # Selecciona un mineral basado en el peso
+    mineral_nombre, valor_venta = random.choices(lista_minerales, weights=pesos, k=1)[0]
     
     view = MinarView(uid, mineral_nombre, valor_venta)
     await interaction.response.send_message(
-        f"⛏️ ¡Has minado con éxito y encontrado: **{mineral_nombre}**!\n💵 Valor de venta rápida: **{valor_venta}**\n\n*¿Qué deseas hacer con este mineral?*",
+        f"⛏️ ¡Has minado con éxito y encontrado: **{mineral_nombre}**!\n💰 Valor de venta rápido: **{valor_venta}**\n¿Qué deseas hacer?",
         view=view
     )
+    
 
 @bot.tree.command(name="indice_minerales", description="Revisa tus minerales guardados en la colección (o la de otro usuario)")
 async def indice_minerales(interaction: discord.Interaction, usuario: discord.Member = None):
