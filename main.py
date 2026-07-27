@@ -372,21 +372,51 @@ async def balance(interaction: discord.Interaction, usuario: discord.Member = No
     total = u.get("dinero", 0) + u.get("banco", 0)
     await interaction.response.send_message(f"📊 **Balance de {target.name}**:\n💵 Mano: **{u.get('dinero', 0)}**\n🏦 Banco: **{u.get('banco', 0)}**\n💎 Total: **{total}**\n{u.get('mascota_emoji', '🐾')} Mascota Nivel: **{u.get('mascota_nivel', 1)}**")
 
-@bot.tree.command(name="top", description="Ranking de los más ricos del servidor")
+@bot.tree.command(name="top", description="Muestra el top 10 de los usuarios más ricos del servidor")
 async def top(interaction: discord.Interaction):
-    cursor = usuarios_col.find().sort([("dinero", -1), ("banco", -1)]).limit(5)
-    usuarios = await cursor.to_list(length=None)
-    texto = "🏆 **Top 5 más ricos del servidor:**\n\n"
-    async for i, user in enumerate(usuarios, 1):
-        total = user.get("dinero", 0) + user.get("banco", 0)
+    # Buscar los 10 usuarios con más dinero ordenados de forma descendente (-1)
+    cursor = usuarios_col.find().sort("dinero", -1).limit(10)
+    usuarios = await cursor.to_list(length=10)
+
+    if not usuarios:
+        await interaction.response.send_message("❌ Aún no hay registros en la economía del servidor.", ephemeral=False)
+        return
+
+    descripcion = "💎 **Ranking de Economía - Top 10** 💎\n\n"
+    
+    for i, user_data in enumerate(usuarios, 1):
+        uid = user_data.get("_id")
+        dinero = user_data.get("dinero", 0)
+        
+        # Intentar obtener el nombre del usuario de manera segura en Discord
         try:
-            member = await bot.fetch_user(int(user["_id"]))
+            member = interaction.guild.get_member(int(uid))
+            if not member:
+                member = await interaction.client.fetch_user(int(uid))
             nombre = member.name
         except:
-            nombre = "Usuario desconocido"
-        texto += f"{i}. {nombre}: **{total}**\n"
-    await interaction.response.send_message(texto)
+            nombre = f"Usuario `{uid}`"
 
+        # Medallas para los primeros 3 puestos
+        if i == 1:
+            medalla = "🥇"
+        elif i == 2:
+            medalla = "🥈"
+        elif i == 3:
+            medalla = "🥉"
+        else:
+            medalla = f"`#{i}`"
+
+        descripcion += f"{medalla} **{nombre}** — 💰 `{dinero:,.0f}` monedas\n"
+
+    embed = discord.Embed(
+        description=descripcion,
+        color=discord.Color.gold()
+    )
+    embed.set_footer(text=f"Solicitado por {interaction.user.name}", icon_url=interaction.user.display_avatar.url)
+
+    await interaction.response.send_message(embed=embed, ephemeral=False)
+    
 @bot.tree.command(name="transferir", description="Envía dinero a otro usuario (soporta cantidad o 'all')")
 async def transferir(interaction: discord.Interaction, usuario: discord.Member, cantidad: str):
     uid_origen = str(interaction.user.id)
