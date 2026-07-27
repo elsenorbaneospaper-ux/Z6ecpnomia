@@ -78,13 +78,12 @@ async def on_ready():
     await bot.tree.sync()
     print("Bot listo con todos los comandos.")
 @bot.tree.error
-on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.CommandOnCooldown):
-        tiempo_restante = round(error.retry_after, 1)
-        # Excepción especial para tu ID para que nunca tenga cooldown
         if str(interaction.user.id) == "1491476806203740373":
-            # Si eres tú, puedes reintentar el comando inmediatamente omitiendo el error
             return
+            
+        tiempo_restante = round(error.retry_after, 1)
         await interaction.response.send_message(
             f"⏳ Estás en tiempo de espera. Por favor, espera **{tiempo_restante} segundos** antes de volver a usar este comando.",
             ephemeral=True
