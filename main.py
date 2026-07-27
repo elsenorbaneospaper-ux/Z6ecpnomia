@@ -787,7 +787,9 @@ async def rompemuros(interaction: discord.Interaction, apuesta: int):
     view.mensaje = await interaction.original_response()
     
     # --- MODO: JUGADOR VS JUGADOR (Con botón de aceptar y mensaje nuevo al terminar) ---
-    uid_destino = str(usuario_opcional.id)
+@bot.tree.command(name="carrera", description="Inicia una carrera contra otro usuario")
+ async def carrera(interaction: discord.Interaction, apuesta: int, usuario_opcional: discord.Member):
+    uid_origen = str(interaction.user.id)  
     if uid_origen == uid_destino:
         await interaction.response.send_message("❌ No puedes competir contra ti mismo.", ephemeral=True)
         return
