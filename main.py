@@ -117,6 +117,7 @@ async def ayuda(interaction: discord.Interaction):
         name="🎲 Apuestas, Acción y Riesgo",
         value=(
             "• **/carrera** [apuesta]: Compite en una carrera rápida arriesgando tu dinero.\n"
+            "• **/rompemuros** [apuesta]: Rompe cada muro y multiplica por 2 tus ganancias por cada muro destruido elije si seguir destruyendo o perderlo todo.. \n"
             "• **/cohete_crash** [apuesta]: Juego de crash donde debes retirar antes de que explote el cohete.\n"
             "• **/suerte** [apuesta]: Pon a prueba tu fortuna en un juego de azar rápido.\n"
             "• **/crimen**: Comete un acto ilícito para ganar dinero (con riesgo de multa o policía).\n"
