@@ -77,6 +77,82 @@ async def on_ready():
     await bot.tree.sync()
     print("Bot listo con todos los comandos.")
 
+@bot.tree.command(name="ayuda", description="Muestra la lista de todos los comandos y categorías disponibles del bot")
+async def ayuda(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="📖 Menú de Ayuda - Todos los Comandos",
+        description="Aquí tienes la lista completa de comandos organizados por categorías:",
+        color=discord.Color.blurple()
+    )
+    
+    # Categoría: Gestión de Dinero y Banco
+    embed.add_field(
+        name="🪙 Gestión de Dinero y Banco",
+        value=(
+            "• **/balance** [usuario]: Revisa tu saldo actual de dinero e inventario.\n"
+            "• **/dinero** [usuario]: Consulta el dinero en mano de un usuario.\n"
+            "• **/verbanco** [usuario]: Consulta el dinero guardado en el banco.\n"
+            "• **/addbanco** [cantidad]: Deposita dinero en el banco.\n"
+            "• **/sacarbanco** [cantidad]: Retira dinero del banco a tu mano.\n"
+            "• **/transferir** [usuario] [cantidad]: Transfiere dinero a otro usuario."
+        ),
+        inline=False
+    )
+    
+    # Categoría: Trabajos y Minería
+    embed.add_field(
+        name="⛏️ Trabajos y Minería",
+        value=(
+            "• **/trabajar**: Consigue dinero realizando trabajos periódicos.\n"
+            "• **/minar**: Explora minas para extraer minerales valiosos.\n"
+            "• **/indice_minerales**: Muestra la lista y valor de los minerales disponibles.\n"
+            "• **/tradear_minerales**: Realiza transacciones o ventas de tus minerales."
+        ),
+        inline=False
+    )
+    
+    # Categoría: Apuestas, Acción y Riesgo
+    embed.add_field(
+        name="🎲 Apuestas, Acción y Riesgo",
+        value=(
+            "• **/carrera** [apuesta]: Compite en una carrera rápida arriesgando tu dinero.\n"
+            "• **/cohete_crash** [apuesta]: Juego de crash donde debes retirar antes de que explote el cohete.\n"
+            "• **/suerte** [apuesta]: Pon a prueba tu fortuna en un juego de azar rápido.\n"
+            "• **/crimen**: Comete un acto ilícito para ganar dinero (con riesgo de multa o policía).\n"
+            "• **/robar** [usuario]: Intenta robarle dinero en mano a otro usuario.\n"
+            "• **/robarbanco** [usuario]: Ataca el banco de otro usuario."
+        ),
+        inline=False
+    )
+    
+    # Categoría: Mascotas
+    embed.add_field(
+        name="🐾 Mascotas",
+        value=(
+            "• **/comprar_mascota** [nombre] [emoji]: Adopta y personaliza tu compañero virtual.\n"
+            "• **/mejorar_mascota**: Sube de nivel a tu mascota para potenciar sus estadísticas.\n"
+            "• **/ver_mascota** [usuario]: Revisa el estado, nivel y nombre de tu mascota o la de otro usuario.\n"
+            "• **/carrera_mascota** [apuesta] [usuario_opcional]: Pon a competir a tu mascota contra Z6 o reta a otro usuario mediante botones."
+        ),
+        inline=False
+    )
+    
+    # Categoría: Eventos y Administración (Solo Dueños)
+    embed.add_field(
+        name="🛠️ Eventos y Administración (Solo Dueños)",
+        value=(
+            "• **/sorteo_economia** [premio] [tiempo] [tiempo_reroll] [cantidad_reroll] [tiempo_claim] [imagen]: Sorteo interactivo avanzado con botón de reclamo con caducidad automática.\n"
+            "• **/dar** [usuario] [cantidad]: Entrega dinero directamente a un usuario.\n"
+            "• **/quitar** [usuario] [cantidad/all]: Retira dinero a un usuario o todo su saldo con 'all'.\n"
+            "• **/reset-eco**: Resetea por completo la economía del servidor."
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="¡Usa los comandos correctamente y diviértete en el servidor!")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+
 # --- ACCIÓN Y RIESGO / SOLO ARRESTO CON AVISO POR DM ---
 
 @bot.tree.command(name="crimen", description="Intenta un crimen riesgoso")
