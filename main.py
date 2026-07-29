@@ -955,7 +955,7 @@ async def nivel_chamba(interaction: discord.Interaction):
 
 # --- 3. COMANDO /trabajo (Cooldown: 2 minutos / 120 seg) ---
 @bot.tree.command(name="trabajo", description="Trabaja en tu empleo actual para ganar dinero y experiencia.")
-@app_commands.cooldown(1, 120, key=app_commands.CooldownType.user)
+@app_commands.checks.cooldown(1, 120)
 async def trabajo(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     uid = str(interaction.user.id)
@@ -1130,7 +1130,7 @@ class VistaCarreraMascota(discord.ui.View):
 
 @bot.tree.command(name="carrera_mascota", description="Pon a competir a tu mascota contra Z6 para duplicar tu apuesta.")
 @app_commands.describe(apuesta="Cantidad de dinero a apostar en la carrera")
-@app_commands.cooldown(1, 300, key=app_commands.CooldownType.user)
+@app_commands.checks.cooldown(1, 300)
 async def carrera_mascota(interaction: discord.Interaction, apuesta: int):
     await interaction.response.defer(ephemeral=True)
     uid = str(interaction.user.id)
@@ -1158,7 +1158,7 @@ async def carrera_mascota(interaction: discord.Interaction, apuesta: int):
 
 # --- BUSCAR TESORO CON MASCOTA (Cooldown: 10 minutos / 600 seg) ---
 @bot.tree.command(name="buscar_tesoro_mascota", description="Envía a tu mascota a buscar tesoros ocultos y desenterrar monedas.")
-@app_commands.cooldown(1, 600, key=app_commands.CooldownType.user)
+@app_commands.cheks.cooldown(1, 600)
 async def buscar_tesoro_mascota(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     uid = str(interaction.user.id)
