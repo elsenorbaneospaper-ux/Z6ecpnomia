@@ -291,7 +291,7 @@ MINERALES_DATA = [
 
 class VistaMinar(discord.ui.View):
     def __init__(self, uid, mineral_encontrado):
-        super().__init__(timeout=60)
+        super().__init__(timeout=600)
         self.uid = uid
         self.mineral = mineral_encontrado
 
@@ -535,7 +535,7 @@ async def inventario(interaction: discord.Interaction):
 
 class VistaCrafteo(discord.ui.View):
     def __init__(self, uid):
-        super().__init__(timeout=60)
+        super().__init__(timeout=180)
         self.uid = uid
 
     @discord.ui.button(label="Ver Recetas de Picos", style=discord.ButtonStyle.primary, emoji="🛠️")
@@ -631,12 +631,12 @@ async def indice_minerales(interaction: discord.Interaction):
     for idx, mineral in enumerate(MINERALES_DATA, start=1):
         descripcion += f"{idx}. {mineral['emoji']} **{mineral['nombre']}** — Valor: `{mineral['valor']}` monedas\n"
     
-    await interaction.followup.send(descripcion, ephemeral=True)
+    await interaction.followup.send(descripcion, ephemeral=False)
 
 # --- JUEGO SUERTE DEL RATÓN (/suerte_raton [apuesta]) ---
 class VistaSuerteRaton(discord.ui.View):
     def __init__(self, uid, apuesta, raton_pos):
-        super().__init__(timeout=60)
+        super().__init__(timeout=300)
         self.uid = uid
         self.apuesta = apuesta
         self.raton_pos = raton_pos
@@ -749,13 +749,13 @@ async def suerte_raton(interaction: discord.Interaction, apuesta: int):
         f"🐭 **¡Juego de Suerte del Ratón!**\n"
         f"Apuesta: `{apuesta}` | Tienes **3 intentos** para atraparlo en la cuadrícula de abajo:",
         view=view,
-        ephemeral=True
+        ephemeral=False
         )
 
     # --- JUEGO PAVO HAMBRIENTO (/pavo_hambriento [apuesta]) ---
 class VistaPavoHambriento(discord.ui.View):
     def __init__(self, uid, apuesta, limite_explosion):
-        super().__init__(timeout=60)
+        super().__init__(timeout=600)
         self.uid = uid
         self.apuesta = apuesta
         self.limite_explosion = limite_explosion # En qué número de alimento explota
@@ -842,7 +842,7 @@ async def pavo_hambriento(interaction: discord.Interaction, apuesta: int):
         f"Apuesta: `{apuesta}` | Cada porción de comida sube la apuesta un **x0.3**.\n"
         f"Usa los botones de abajo con cuidado:",
         view=view,
-        ephemeral=True
+        ephemeral=False
     )
     
 
@@ -869,7 +869,7 @@ async def asegurar_perfil_trabajo(uid: str):
 # --- 1. COMANDO /elegir_trabajo ---
 class VistaElegirTrabajo(discord.ui.View):
     def __init__(self, uid, nivel_usuario):
-        super().__init__(timeout=60)
+        super().__init__(timeout=300)
         self.uid = uid
         
         for idx, trabajo in enumerate(TRABAJOS_DATA):
@@ -919,7 +919,7 @@ async def elegir_trabajo(interaction: discord.Interaction):
         descripcion += f"• **{t['nombre']}** — Req. Nivel {t['nivel_req']} {estado}\n"
 
     view = VistaElegirTrabajo(uid, nivel_chamba)
-    await interaction.followup.send(descripcion, view=view, ephemeral=True)
+    await interaction.followup.send(descripcion, view=view, ephemeral=False)
 
 
 # --- 2. COMANDO /nivel_chamba ---
@@ -951,7 +951,7 @@ async def nivel_chamba(interaction: discord.Interaction):
         f"⭐ Nivel en Chamba: `{nivel}`\n"
         f"✨ Experiencia (XP): `{xp} / {xp_necesaria}`\n"
         f"{info_prox}",
-        ephemeral=True
+        ephemeral=False
     )
 
 
@@ -1001,7 +1001,7 @@ async def trabajo(interaction: discord.Interaction):
     if subio_nivel:
         msg += f"\n\n🎉 **¡FELICIDADES! Subiste al Nivel {nuevo_nivel} de Chamba.** ¡Revisa /elegir_trabajo para ver si hay nuevos empleos!"
 
-    await interaction.followup.send(msg, ephemeral=True)
+    await interaction.followup.send(msg, ephemeral=False)
 
 # --- COMANDOS DE MASCOTAS (Integrados con la estructura base) ---
 
@@ -1037,7 +1037,7 @@ async def comprar_mascota(interaction: discord.Interaction, nombre: str, emoji: 
     await interaction.followup.send(
         f"🎉 **¡Felicidades por tu adopción!**\n"
         f"Has adoptado a {emoji} **{nombre}** con éxito.",
-        ephemeral=True
+        ephemeral=False
     )
 
 
@@ -1066,7 +1066,7 @@ async def mejorar_mascota(interaction: discord.Interaction):
 
     await interaction.followup.send(
         f"⭐ **¡Mejora exitosa!** Tu mascota {datos.get('mascota_emoji')} **{datos.get('mascota_nombre')}** ha subido al **Nivel {nivel_actual + 1}**.",
-        ephemeral=True
+        ephemeral=False
     )
 
 
@@ -1092,14 +1092,14 @@ async def ver_mascota(interaction: discord.Interaction, usuario: discord.Member 
         f"• Nombre: {emoji} **{nombre}**\n"
         f"• Nivel: `{nivel}`\n"
         f"• Estado: ¡Lista para buscar tesoros con `/buscar_tesoro_mascota`!",
-        ephemeral=True
+        ephemeral=False
     )
 
 
 # --- CARRERA DE MASCOTAS (/carrera_mascota [apuesta]) ---
 class VistaCarreraMascota(discord.ui.View):
     def __init__(self, uid, apuesta):
-        super().__init__(timeout=45)
+        super().__init__(timeout=80)
         self.uid = uid
         self.apuesta = apuesta
 
@@ -1154,7 +1154,7 @@ async def carrera_mascota(interaction: discord.Interaction, apuesta: int):
         f"Tu mascota {emoji_mascota} **{nombre_mascota}** está lista en la línea de salida.\n"
         f"Apuesta actual: `{apuesta}` monedas. Presiona el botón para iniciar:",
         view=view,
-        ephemeral=True
+        ephemeral=False
     )
 
 
@@ -1375,7 +1375,7 @@ async def dar(interaction: discord.Interaction, usuario: discord.Member, cantida
 
     await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": cantidad}})
 
-    await interaction.followup.send(f"✅ Se han entregado exitosamente **{cantidad}** monedas a {usuario.mention}.", ephemeral=True)
+    await interaction.followup.send(f"✅ Se han entregado exitosamente **{cantidad}** monedas a {usuario.mention}.", ephemeral=False)
 
 
 # --- 3. COMANDO /quitar (Solo Dueños) ---
