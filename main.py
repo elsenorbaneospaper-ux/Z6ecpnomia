@@ -80,17 +80,19 @@ async def on_ready():
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.CommandOnCooldown):
-        if str(interaction.user.id) == "1491476806203740373":
-            return
-            
+        # Calcula los minutos o segundos restantes
         tiempo_restante = round(error.retry_after, 1)
-        await interaction.response.send_message(
-            f"⏳ Estás en tiempo de espera. Por favor, espera **{tiempo_restante} segundos** antes de volver a usar este comando.",
-            ephemeral=True
-        )
+        mensaje = f"⏳ Estás en cooldown. Por favor, espera **{tiempo_restante} segundos** para volver a usar este comando."
+        
+        # Si ya se hizo defer, usamos followup; si no, response.send_message
+        if interaction.response.is_done():
+            await interaction.followup.send(mensaje, ephemeral=True)
+        else:
+            await interaction.response.send_message(mensaje, ephemeral=True)
     else:
+        # Si es otro tipo de error, lo imprimimos en consola para depurar
         raise error
-
+        
 # /balance [usuario]
 @bot.tree.command(name="balance", description="Revisa tu saldo actual de dinero e inventario.")
 @app_commands.describe(usuario="Usuario opcional a consultar")
@@ -120,7 +122,7 @@ async def dinero(interaction: discord.Interaction, usuario: discord.Member = Non
     await asegurar_usuario(uid)
     datos = await usuarios_col.find_one({"_id": uid})
     
-    await interaction.followup.send(f"💵 El dinero en mano de **{target.name}** es: `{datos.get('dinero', 0)}`", ephemeral=True)
+    await interaction.followup.send(f"💵 El dinero en mano de **{target.name}** es: `{datos.get('dinero', 0)}`", ephemeral=False)
 
 # /verbanco [usuario]
 @bot.tree.command(name="verbanco", description="Consulta el dinero guardado en el banco.")
@@ -133,7 +135,7 @@ async def verbanco(interaction: discord.Interaction, usuario: discord.Member = N
     await asegurar_usuario(uid)
     datos = await usuarios_col.find_one({"_id": uid})
     
-    await interaction.followup.send(f"🏦 El dinero en el banco de **{target.name}** es: `{datos.get('banco', 0)}`", ephemeral=True)
+    await interaction.followup.send(f"🏦 El dinero en el banco de **{target.name}** es: `{datos.get('banco', 0)}`", ephemeral=False)
 
 
 # /addbanco [cantidad]
@@ -154,7 +156,7 @@ async def addbanco(interaction: discord.Interaction, cantidad: str):
         try:
             monto = int(cantidad)
         except ValueError:
-            await interaction.followup.send("❌ Por favor, introduce un número válido o 'all'.", ephemeral=True)
+            await interaction.followup.send("❌ Por favor, introduce un número válido o 'all'.", ephemeral=False)
             return
 
     if monto <= 0:
@@ -170,7 +172,7 @@ async def addbanco(interaction: discord.Interaction, cantidad: str):
         {"$inc": {"dinero": -monto, "banco": monto}}
     )
     
-    await interaction.followup.send(f"✅ Has depositado **{monto}** en el banco correctamente.", ephemeral=True)
+    await interaction.followup.send(f"✅ Has depositado **{monto}** en el banco correctamente.", ephemeral=False)
 
 # /sacarbanco [cantidad]
 @bot.tree.command(name="sacarbanco", description="Retira dinero del banco a tu mano.")
@@ -198,7 +200,7 @@ async def sacarbanco(interaction: discord.Interaction, cantidad: str):
         return
 
     if banco_disponible < monto:
-        await interaction.followup.send("❌ No tienes esa cantidad guardada en el banco.", ephemeral=True)
+        await interaction.followup.send("❌ No tienes esa cantidad guardada en el banco.", ephemeral=False)
         return
 
     await usuarios_col.update_one(
@@ -249,7 +251,7 @@ async def transferir(interaction: discord.Interaction, usuario: discord.Member, 
     await usuarios_col.update_one({"_id": uid_emisor}, {"$inc": {"dinero": -monto}})
     await usuarios_col.update_one({"_id": uid_receptor}, {"$inc": {"dinero": monto}})
     
-    await interaction.followup.send(f"💸 Has transferido exitosamente **{monto}** a **{usuario.name}**.", ephemeral=True)
+    await interaction.followup.send(f"💸 Has transferido exitosamente **{monto}** a **{usuario.name}**.", ephemeral=False)
 
 
 # --- SISTEMA DE MINERÍA Y CRAFTEO ---
@@ -348,7 +350,7 @@ async def minar(interaction: discord.Interaction):
         f"**Valor estimado:** `{mineral_elegido['valor']}` monedas\n\n"
         f"¿Qué deseas hacer?",
         view=view,
-        ephemeral=True
+        ephemeral=False
     )
 
 # --- COMANDO /top (Top 10 de usuarios con más balance/patrimonio) ---
@@ -396,7 +398,7 @@ async def top(interaction: discord.Interaction):
         )
 
     embed.description = descripcion_ranking
-    await interaction.followup.send(embed=embed, ephemeral=True)
+    await interaction.followup.send(embed=embed, ephemeral=False)
 
 
 # --- COMANDO /ayuda DEFINITIVO Y COMPLETO ---
@@ -527,7 +529,7 @@ async def inventario(interaction: discord.Interaction):
         f"🛠️ **Pico Equipado:** {pico_actual.get('nombre')} (+{pico_actual.get('bonus')}% probabilidad)\n"
         f"📋 **Picos Disponibles:** {', '.join(picos_usuario)}\n\n"
         f"💎 **Minerales:**\n{texto_minerales}",
-        ephemeral=True
+        ephemeral=False
     )
 
 
