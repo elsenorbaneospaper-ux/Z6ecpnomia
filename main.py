@@ -97,7 +97,7 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 @bot.tree.command(name="balance", description="Revisa tu saldo actual de dinero e inventario.")
 @app_commands.describe(usuario="Usuario opcional a consultar")
 async def balance(interaction: discord.Interaction, usuario: discord.Member = None):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     target = usuario or interaction.user
     uid = str(target.id)
     
