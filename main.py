@@ -327,7 +327,7 @@ class VistaMinar(discord.ui.View):
 
 # /minar (con cooldown de 5 minutos / 300 segundos)
 @bot.tree.command(name="minar", description="Explora minas para extraer minerales valiosos.")
-@app_commands.cooldown(1, 300, key=app_commands.CooldownType.user)
+@app_commands.checks.cooldown(1, 300, key=app_commands.CooldownType.user)
 async def minar(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     uid = str(interaction.user.id)
