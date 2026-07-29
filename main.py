@@ -819,7 +819,7 @@ class VistaPavoHambriento(discord.ui.View):
 
 
 @bot.tree.command(name="pavo_hambriento", description="Alimenta al pavo sin que explote para multiplicar tus ganancias.")
-@app_commands.cooldown(1, 360, key=app_commands.CooldownType.user)
+@app_commands.checks.cooldown(1, 360)
 @app_commands.describe(apuesta="Cantidad de dinero a apostar")
 async def pavo_hambriento(interaction: discord.Interaction, apuesta: int):
     await interaction.response.defer(ephemeral=True)
