@@ -511,23 +511,28 @@ async def ayuda(interaction: discord.Interaction):
     )
     
     embed.set_footer(text="¡Usa los comandos correctamente y diviértete en el servidor!")
-    await interaction.followup.send(embed=embed, ephemeral=True)
-class VistaRunBomb(discord.ui.View):
-    def __init__(self, uid, apuesta, casilla_elegida):
+    await interaction.followup.send(embed=embed, ephemeral=False)
+
+class VistaRunBombVisual(discord.ui.View):
+    def __init__(self, uid, apuesta, casilla_elegida, estado_casillas):
         super().__init__(timeout=60)
         self.uid = uid
         self.apuesta = apuesta
         self.casilla_elegida = casilla_elegida
         
         for i in range(1, 13):
-            estilo = discord.ButtonStyle.green if i == casilla_elegida else discord.ButtonStyle.secondary
-            label_texto = f"🎯 [Tú] #{i}" if i == casilla_elegida else f"Casilla {i}"
+            estilo = estado_casillas.get(i, discord.ButtonStyle.secondary)
+            if i == casilla_elegida:
+                label_texto = f"🎯 [Tú] #{i}"
+            else:
+                label_texto = f"Casilla {i}"
+                
             button = discord.ui.Button(label=label_texto, style=estilo, custom_id=f"b_{i}", disabled=True)
             self.add_item(button)
 
 
-@bot.tree.command(name="run_bomb", description="Selecciona una casilla y sobrevive a la expansión de las bombas.")
-@app_commands.checks.cooldown(1, 480) # Cooldown de 8 minutos (480 segundos)
+@bot.tree.command(name="run_bomb", description="Selecciona una casilla y sobrevive a las 4 fases de expansión de la bomba.")
+@app_commands.checks.cooldown(1, 480) # Cooldown de 8 minutos
 @app_commands.describe(apuesta="Cantidad de dinero a apostar", casilla="Elige una casilla del 1 al 12")
 @app_commands.choices(casilla=[app_commands.Choice(name=f"Casilla {i}", value=i) for i in range(1, 13)])
 async def run_bomb(interaction: discord.Interaction, apuesta: int, casilla: int):
@@ -549,6 +554,7 @@ async def run_bomb(interaction: discord.Interaction, apuesta: int, casilla: int)
                     vecinos.append(f * 4 + co + 1)
         return vecinos
 
+    # 1. Definir bombas iniciales
     bomba_1 = random.randint(1, 12)
     bombas_activas = [bomba_1]
     
@@ -559,58 +565,150 @@ async def run_bomb(interaction: discord.Interaction, apuesta: int, casilla: int)
 
     total_bombas_caidas = len(bombas_activas)
 
-    view_inicial = VistaRunBomb(uid, apuesta, casilla)
+    # Estado inicial de los botones
+    estado_inicial = {i: (discord.ButtonStyle.primary if i == casilla else discord.ButtonStyle.secondary) for i in range(1, 13)}
+    view_actual = VistaRunBombVisual(uid, apuesta, casilla, estado_inicial)
+
     msg = await interaction.followup.send(
-        f"💣 **¡RUN BOMB INICIADO!**\n• Tu casilla elegida: `#{casilla}`\n• Bombas caídas: `{total_bombas_caidas}`\n\n*Las bombas están a punto de detonar y expandirse...*",
-        view=view_inicial,
+        f"💣 **¡RUN BOMB INICIADO!**\n• Tu casilla elegida: `#{casilla}`\n• Apuesta: `{apuesta:,}` monedas\n• Bombas caídas: `{total_bombas_caidas}`\n\n*La bomba va a detonar...*",
+        view=view_actual,
         ephemeral=False
     )
 
     await asyncio.sleep(1.5)
 
-    afectados_fase_1 = set(bombas_activas)
-    if casilla in afectados_fase_1:
+    # ==========================================
+    # FASE 1: Impacto Directo (ROJO - Multiplicador 0)
+    # ==========================================
+    fase_1_rojo = set(bombas_activas)
+    estado_fase_1 = {i: discord.ButtonStyle.secondary for i in range(1, 13)}
+    for c_num in range(1, 13):
+        if c_num in fase_1_rojo:
+            estado_fase_1[c_num] = discord.ButtonStyle.danger # Rojo
+        elif c_num == casilla:
+            estado_fase_1[c_num] = discord.ButtonStyle.primary
+
+    view_actual = VistaRunBombVisual(uid, apuesta, casilla, estado_fase_1)
+    
+    if casilla in fase_1_rojo:
+        dinero_recibido = 0
+        multiplicador = "0"
         await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": -apuesta}})
-        return await msg.edit(
-            content=f"🟥 **¡Impacto Directo!**\nLa bomba cayó justo en la casilla `#{casilla}`.\nSi estuvieras en una de esas casillas no obtuvieras nada..\n\n❌ Perdiste tu apuesta de **`{apuesta:,}`** monedas."
+        await msg.edit(
+            content=f"🟥 **¡FASE 1: Impacto Directo (Rojo)!**\nLa bomba cayó en la casilla `#{casilla}`.\nSi estuvieras aquí hubieras recibido {dinero_recibido} y multiplicador de {multiplicador} si sobrevives\n\n❌ Perdiste tu apuesta de **`{apuesta:,}`** monedas.",
+            view=view_actual
         )
+        return
 
-    expandidos_1 = set()
-    for b in bombas_activas:
-        for v in obtener_vecinos(b):
-            expandidos_1.add(v)
-
+    await msg.edit(
+        content=f"🟥 **¡FASE 1: Impacto Directo (Rojo)!**\nLas bombas han detonado. Te salvaste por ahora...",
+        view=view_actual
+    )
     await asyncio.sleep(1.5)
-    if casilla in expandidos_1:
+
+    # ==========================================
+    # FASE 2: Primera Expansión (NARANJA - Multiplicador x0.5)
+    # ==========================================
+    fase_2_naranja = set()
+    for b in fase_1_rojo:
+        for v in obtener_vecinos(b):
+            fase_2_naranja.add(v)
+
+    estado_fase_2 = dict(estado_fase_1)
+    for c_num in range(1, 13):
+        if c_num in fase_1_rojo:
+            estado_fase_2[c_num] = discord.ButtonStyle.danger
+        elif c_num in fase_2_naranja:
+            estado_fase_2[c_num] = discord.ButtonStyle.primary # Simula naranja/blurple
+        elif c_num == casilla:
+            estado_fase_2[c_num] = discord.ButtonStyle.success
+
+    view_actual = VistaRunBombVisual(uid, apuesta, casilla, estado_fase_2)
+
+    if casilla in fase_2_naranja:
         premio = int(apuesta * 0.5)
+        dinero_recibido = premio
+        multiplicador = "0.5"
         reembolso_neto = premio - apuesta 
         await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": reembolso_neto}})
-        return await msg.edit(
-            content=f"🟧 **¡Primera Expansión (Radio 1)!**\nLa onda expansiva alcanzó la casilla `#{casilla}`.\nSi estuvieras en una de esas casillas obtienes un `x0.5`..\n\n💸 Obtuviste la mitad de tu apuesta: **`{premio:,}`** monedas."
+        await msg.edit(
+            content=f"🟧 **¡FASE 2: Primera Expansión (Naranja)!**\nLa onda expansiva alcanzó la casilla `#{casilla}`.\nSi estuvieras aquí hubieras recibido {dinero_recibido} y multiplicador de {multiplicador} si sobrevives\n\n💸 Obtuviste **`{premio:,}`** monedas (x0.5).",
+            view=view_actual
         )
+        return
 
-    expandidos_2 = set()
-    for b in list(expandidos_1):
-        for v in obtener_vecinos(b):
-            expandidos_2.add(v)
-
+    await msg.edit(
+        content=f"🟧 **¡FASE 2: Primera Expansión completada!**\nSigues a salvo...",
+        view=view_actual
+    )
     await asyncio.sleep(1.5)
-    if casilla in expandidos_2:
-        return await msg.edit(
-            content=f"🟨 **¡Segunda Expansión alcanzada!**\nLa onda expansiva rozó tu posición en la casilla `#{casilla}`.\nObtienes tu apuesta de vuelta sin pérdidas (`x1.0`)."
+
+    # ==========================================
+    # FASE 3: Segunda Expansión (AMARILLO - Multiplicador x1.0)
+    # ==========================================
+    fase_3_amarillo = set()
+    for b in list(fase_2_naranja):
+        for v in obtener_vecinos(b):
+            if v not in fase_1_rojo:
+                fase_3_amarillo.add(v)
+
+    estado_fase_3 = dict(estado_fase_2)
+    for c_num in range(1, 13):
+        if c_num in fase_1_rojo:
+            estado_fase_3[c_num] = discord.ButtonStyle.danger
+        elif c_num in fase_2_naranja:
+            estado_fase_3[c_num] = discord.ButtonStyle.primary
+        elif c_num in fase_3_amarillo:
+            estado_fase_3[c_num] = discord.ButtonStyle.secondary # Simula amarillo
+        elif c_num == casilla:
+            estado_fase_3[c_num] = discord.ButtonStyle.success
+
+    view_actual = VistaRunBombVisual(uid, apuesta, casilla, estado_fase_3)
+
+    if casilla in fase_3_amarillo:
+        dinero_recibido = apuesta
+        multiplicador = "1.0"
+        await msg.edit(
+            content=f"🟨 **¡FASE 3: Segunda Expansión (Amarillo)!**\nLa onda expansiva rozó tu posición en la casilla `#{casilla}`.\nSi estuvieras aquí hubieras recibido {dinero_recibido} y multiplicador de {multiplicador} si sobrevives\n\nRecuperas tu apuesta de vuelta sin pérdidas (`x1.0`).",
+            view=view_actual
         )
+        return
+
+    await msg.edit(
+        content=f"🟨 **¡FASE 3: Segunda Expansión completada!**\nA punto de la victoria...",
+        view=view_actual
+    )
+    await asyncio.sleep(1.5)
+
+    # ==========================================
+    # FASE 4: Supervivencia Total (VERDE - Multiplicador x1.5 o superior)
+    # ==========================================
+    estado_fase_4 = dict(estado_fase_3)
+    for c_num in range(1, 13):
+        if c_num == casilla:
+            estado_fase_4[c_num] = discord.ButtonStyle.success
+
+    view_actual = VistaRunBombVisual(uid, apuesta, casilla, estado_fase_4)
 
     if total_bombas_caidas >= 2:
         premio_bonus = int(apuesta * 1.5)
+        dinero_recibido = premio_bonus
+        multiplicador = "1.5"
         ganancia_neta = premio_bonus - apuesta
         await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": ganancia_neta}})
         await msg.edit(
-            content=f"🟩 **¡SUPERVIVENCIA ÉPICA!**\nSobreviviste a **2 bombas** y sus expansiones en la casilla `#{casilla}`.\n\n🏆 ¡Obtuviste un **bonus de x1.5**! Ganaste **`+{ganancia_neta:,}`** monedas (Total: `{premio_bonus:,}`)."
+            content=f"🟩 **¡FASE 4: Supervivencia Total (Verde)!**\nSobreviviste a **2 bombas** y todas sus expansiones en la casilla `#{casilla}`.\nSi estuvieras aquí hubieras recibido {dinero_recibido} y multiplicador de {multiplicador} si sobrevives\n\n🏆 ¡Obtuviste un **bonus de x1.5**! Ganaste **`+{ganancia_neta:,}`** monedas (Total: `{premio_bonus:,}`).",
+            view=view_actual
         )
     else:
+        dinero_recibido = apuesta
+        multiplicador = "1.0"
         await msg.edit(
-            content=f"🟩 **¡SALVADO!**\nTe mantuviste totalmente fuera del radio de la explosión en la casilla `#{casilla}`.\nRecuperas tu apuesta a salvo."
-            )
+            content=f"🟩 **¡FASE 4: Supervivencia Total (Verde)!**\nTe mantuviste totalmente fuera del radio de la explosión en la casilla `#{casilla}`.\nSi estuvieras aquí hubieras recibido {dinero_recibido} y multiplicador de {multiplicador} si sobrevives\n\nRecuperas tu apuesta a salvo.",
+            view=view_actual
+    )
+        
+
     
 
 class VistaCupGame(discord.ui.View):
