@@ -353,54 +353,62 @@ async def minar(interaction: discord.Interaction):
         ephemeral=False
     )
 
-# --- COMANDO /top (Top 10 de usuarios con más balance/patrimonio) ---
-@bot.tree.command(name="top", description="Muestra el top 10 de los usuarios con más dinero y patrimonio en el servidor.")
+
+@bot.tree.command(name="top", description="Muestra la tabla de clasificación de la economía total.")
+@app_commands.checks.cooldown(1, 10)
 async def top(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=False)
+    
+    # Obtenemos todos los usuarios excluyendo la configuración global
+    cursor = usuarios_col.find({"_id": {"$ne": "configuracion_global"}})
+    usuarios = await cursor.to_list(length=None)
+    
+    if not usuarios:
+        return await interaction.followup.send("❌ No hay datos de usuarios registrados todavía.")
 
-    # Buscar a todos los usuarios registrados y ordenarlos por su dinero total (mano + banco) en orden descendente
-    usuarios_cursor = usuarios_col.find({})
-    lista_usuarios = await usuarios_cursor.to_list(length=None)
-
-    if not lista_usuarios:
-        return await interaction.followup.send("❌ No hay registros de economía en la base de datos todavía.", ephemeral=True)
-
-    # Calcular el patrimonio total (dinero + banco) para cada usuario
-    datos_ordenados = []
-    for u in lista_usuarios:
-        uid = int(u["_id"])
-        dinero = u.get("dinero", 0)
+    # Calculamos el total (efectivo + banco) para cada usuario
+    lista_ranking = []
+    for u in usuarios:
+        try:
+            user_id_int = int(u["_id"])
+        except ValueError:
+            continue
+        
+        # Ajusta los nombres de las llaves según cómo las guardes en tu base de datos (ej: "efectivo", "mano", "banco", etc.)
+        efectivo = u.get("dinero", u.get("efectivo", 0))
         banco = u.get("banco", 0)
-        patrimonio = dinero + banco
-        datos_ordenados.append((uid, patrimonio, dinero, banco))
+        total_balance = efectivo + banco
+        
+        lista_ranking.append({"id": user_id_int, "total": total_balance})
 
-    # Ordenar de mayor a menor según el patrimonio total
-    datos_ordenados.sort(key=lambda x: x[1], reverse=True)
-    top_10 = datos_ordenados[:10]
+    # Ordenamos de mayor a menor según el total combinado y tomamos los primeros 10
+    lista_ranking = sorted(lista_ranking, key=lambda x: x["total"], reverse=True)[:10]
+
+    descripcion = ""
+    for index, item in enumerate(lista_ranking, start=1):
+        mencion = f"<@{item['id']}>"
+        total_format = item["total"]
+        
+        if index == 1:
+            medalla = "👑"
+        elif index == 2:
+            medalla = "🥈"
+        elif index == 3:
+            medalla = "🥉"
+        else:
+            medalla = f"`#{index}`"
+            
+        descripcion += f"{medalla} {mencion} — **`{total_format:,}`** monedas en total\n"
 
     embed = discord.Embed(
-        title="🏆 Top 10 - Ricos del Servidor",
-        description="Los usuarios con mayor patrimonio acumulado (Efectivo + Banco):",
+        title="🏆 Tabla de Clasificación (Balance Total)",
+        description=descripcion,
         color=discord.Color.gold()
     )
-
-    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-
-    descripcion_ranking = ""
-    for idx, (uid, patrimonio, dinero, banco) in enumerate(top_10):
-        medalla = medals[idx]
-        usuario_obj = interaction.guild.get_member(uid)
-        nombre_usuario = usuario_obj.mention if usuario_obj else f"Usuario ID: {uid}"
-        
-        descripcion_ranking += (
-            f"{medalla} {nombre_usuario}\n"
-            f"   • Patrimonio: `{patrimonio:,}` monedas (💵 `{dinero:,}` | 🏦 `{banco:,}`)\n\n"
-        )
-
-    embed.description = descripcion_ranking
-    await interaction.followup.send(embed=embed, ephemeral=False)
-
-
+    
+    await interaction.followup.send(embed=embed)
+            
+    
 # --- COMANDO /ayuda DEFINITIVO Y COMPLETO ---
 @bot.tree.command(name="ayuda", description="Muestra la lista de todos los comandos y sistemas disponibles del bot.")
 async def ayuda(interaction: discord.Interaction):
