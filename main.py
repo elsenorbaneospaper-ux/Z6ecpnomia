@@ -729,7 +729,7 @@ class VistaSuerteRaton(discord.ui.View):
 
 
 @bot.tree.command(name="suerte_raton", description="Busca al ratón oculto en una cuadrícula de 12 casillas con pistas.")
-@app_commands.cooldown(1, 360, key=app_commands.CooldownType.user)
+@app_commands.checks.cooldown(1, 360)
 @app_commands.describe(apuesta="Cantidad de dinero a apostar")
 async def suerte_raton(interaction: discord.Interaction, apuesta: int):
     await interaction.response.defer(ephemeral=True)
