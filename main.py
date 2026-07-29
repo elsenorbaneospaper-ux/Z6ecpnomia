@@ -503,9 +503,230 @@ async def ayuda(interaction: discord.Interaction):
     
     embed.set_footer(text="¡Usa los comandos correctamente y diviértete en el servidor!")
     await interaction.followup.send(embed=embed, ephemeral=True)
+
+class VistaRompemuros(discord.ui.View):
+    def __init__(self, uid, apuesta, muros_rotos, multiplicador_actual):
+        super().__init__(timeout=600)
+        self.uid = uid
+        self.apuesta = apuesta
+        self.muros_rotos = muros_rotos
+        self.multiplicador_actual = multiplicador_actual
+
+    @discord.ui.button(label="🔨 Romper Siguiente Muro", style=discord.ButtonStyle.blurple)
+    async def romper(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if str(interaction.user.id) != self.uid:
+            return await interaction.response.send_message("❌ Este juego no es tuyo.", ephemeral=True)
+
+        # 60% de probabilidad de superar el muro
+        exito = random.random() < 0.60 
+
+        if exito:
+            self.muros_rotos += 1
+            self.multiplicador_actual *= 2 # Multiplica x2 de forma progresiva
+            
+            vista_siguiente = VistaRompemuros(self.uid, self.apuesta, self.muros_rotos, self.multiplicador_actual)
+            await interaction.response.edit_message(
+                content=f"🧱 **¡Muro superado con éxito!**\n• Muros rotos: `{self.muros_rotos}`\n• Multiplicador actual: `{self.multiplicador_actual}x`\n• Premio acumulado: **`{int(self.apuesta * self.multiplicador_actual):,}`** monedas\n\n¿Qué deseas hacer?",
+                view=vista_siguiente
+            )
+        else:
+            for child in self.children:
+                child.disabled = True
+            await interaction.response.edit_message(
+                content=f"💥 **¡El muro se derrumbó sobre ti!**\nIntentaste romper el muro #{self.muros_rotos + 1} y perdiste tu apuesta de **`{self.apuesta:,}`** monedas.",
+                view=self
+            )
+
+    @discord.ui.button(label="💰 Cobrar y Salir", style=discord.ButtonStyle.green)
+    async def cobrar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if str(interaction.user.id) != self.uid:
+            return await interaction.response.send_message("❌ Este juego no es tuyo.", ephemeral=True)
+
+        premio_total = int(self.apuesta * self.multiplicador_actual)
+        ganancia_neta = premio_total - self.apuesta
+
+        await usuarios_col.update_one({"_id": self.uid}, {"$inc": {"dinero": ganancia_neta}})
+
+        for child in self.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(
+            content=f"🎉 **¡EXCAVACIÓN EXITOSA!**\n🧱 Muros superados: `{self.muros_rotos}`\n📈 Multiplicador final: `{self.multiplicador_actual}x`\n💰 Te retiraste a tiempo con una ganancia neta de **`+{ganancia_neta:,}`** (Total: `{premio_total:,}`)",
+            view=self
+        )
+
+
+@bot.tree.command(name="rompemuros", description="Rompe muros multiplicando tus ganancias x2 progresivamente.")
+@app_commands.checks.cooldown(1, 20)
+@app_commands.describe(apuesta="Cantidad de dinero a apostar para iniciar")
+async def rompemuros(interaction: discord.Interaction, apuesta: int):
+    await interaction.response.defer(ephemeral=False)
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    if datos.get("dinero", 0) < apuesta or apuesta <= 0:
+        return await interaction.followup.send("❌ No tienes suficiente dinero.", ephemeral=True)
+
+    # Primer intento automático para iniciar la cadena
+    exito_inicial = random.random() < 0.70 
     
-# /inventario
-@bot.tree.command(name="inventario", description="Muestra tus minerales recolectados y picos actuales.")
+    if not exito_inicial:
+        await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": -apuesta}})
+        return await interaction.followup.send(f"🧱 El primer muro era demasiado duro y perdiste tu apuesta de `{apuesta:,}` monedas.", ephemeral=False)
+
+    muros_rotos = 1
+    multiplicador = 2.0 # Primer muro otorga x2 inicial
+    view = VistaRompemuros(uid, apuesta, muros_rotos, multiplicador)
+
+    await interaction.followup.send(
+        f"🎉 **¡EXCAVACIÓN EXITOSA!**\n🧱 Muros superados: `1`\n📈 Multiplicador final: `2x`\n💰 Te retiraste a tiempo con una ganancia neta de **`+{int(apuesta * 2) - apuesta:,}`** (Total: `{int(apuesta * 2):,}`)",
+        view=view,
+        ephemeral=False
+        )
+    
+
+class VistaCohete(discord.ui.View):
+    def __init__(self, uid, apuesta):
+        super().__init__(timeout=600)
+        self.uid = uid
+        self.apuesta = apuesta
+        self.multiplicador = 1.0
+        self.en_curso = True
+        self.mensaje_obj = None
+
+    @discord.ui.button(label="🚀 ¡Retirarse (Cash Out)!", style=discord.ButtonStyle.green)
+    async def retirar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if str(interaction.user.id) != self.uid:
+            return await interaction.response.send_message("❌ Este juego no es tuyo.", ephemeral=True)
+        
+        if not self.en_curso:
+            return await interaction.response.send_message("❌ El cohete ya explotó.", ephemeral=True)
+
+        self.en_curso = False
+        ganancia = int(self.apuesta * self.multiplicador)
+        
+        await usuarios_col.update_one({"_id": self.uid}, {"$inc": {"dinero": ganancia}})
+        
+        for child in self.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(
+            content=f"🎯 **¡CASH OUT EXITOSO!**\n🚀 Te retiraste con un multiplicador de `{self.multiplicador:.1f}x`.\n💰 Ganaste **`{ganancia:,}`** de dinero.",
+            view=self
+        )
+
+
+@bot.tree.command(name="cohete_crash", description="Apuesta y retira mientras el cohete sube +0.5 cada 1.5s.")
+@app_commands.checks.cooldown(1, 30)
+@app_commands.describe(apuesta="Cantidad de dinero a apostar")
+async def cohete_crash(interaction: discord.Interaction, apuesta: int):
+    await interaction.response.defer(ephemeral=False)
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    if datos.get("dinero", 0) < apuesta or apuesta <= 0:
+        return await interaction.followup.send("❌ No tienes suficiente dinero.", ephemeral=True)
+
+    await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": -apuesta}})
+
+    punto_explosion = round(random.choice([1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0]), 1)
+    view = VistaCohete(uid, apuesta)
+    
+    msg = await interaction.followup.send(
+        f"🚀 **¡El cohete ha despegado!**\nMultiplicador actual: `1.0x`\nApuesta: `{apuesta:,}` monedas\n¡Presiona el botón para retirar antes de que explote!",
+        view=view,
+        ephemeral=False
+    )
+    view.mensaje_obj = msg
+
+    while view.en_curso and view.multiplicador < punto_explosion:
+        await asyncio.sleep(1.5) # Exactamente cada 1.5 segundos
+        if not view.en_curso:
+            break
+        
+        view.multiplicador = round(view.multiplicador + 0.5, 1) # Sube +0.5 exactamente
+        
+        if view.multiplicador >= punto_explosion:
+            view.en_curso = False
+            for child in view.children:
+                child.disabled = True
+            try:
+                await msg.edit(
+                    content=f"💥 **¡BOOM! El cohete explotó en `x{punto_explosion}`**\nPerdiste tu apuesta de `{apuesta:,}` monedas.",
+                    view=view
+                )
+            except Exception:
+                pass
+            break
+        else:
+            try:
+                await msg.edit(
+                    content=f"🚀 **El cohete sigue subiendo...**\nMultiplicador actual: `x{view.multiplicador:.1f}`\n¡Apúrate en retirar!",
+                    view=view
+                )
+            except Exception:
+                pass
+            
+
+class VistaInventarioConEquipamiento(discord.ui.View):
+    def __init__(self, uid, picos_usuario, pico_actual_nombre):
+        super().__init__(timeout=180)
+        self.uid = uid
+        
+        options = []
+        for pico in picos_usuario:
+            is_equipped = (pico == pico_actual_nombre)
+            desc = "✅ Actualmente Equipado" if is_equipped else "Haz clic para equipar este pico"
+            options.append(discord.SelectOption(label=pico, description=desc, default=is_equipped))
+
+        self.select_pico = discord.ui.Select(placeholder="🔄 Selecciona un pico para equipar...", options=options)
+        self.select_pico.callback = self.equipar_callback
+        self.add_item(self.select_pico)
+
+    async def equipar_callback(self, interaction: discord.Interaction):
+        if str(interaction.user.id) != self.uid:
+            return await interaction.response.send_message("❌ Este menú no es para ti.", ephemeral=True)
+        
+        nuevo_pico_nombre = self.select_pico.values[0]
+        await asegurar_usuario(self.uid)
+        
+        # Guardamos el pico activo respetando tu estructura original en un diccionario
+        nuevo_pico_obj = {"nombre": nuevo_pico_nombre} 
+
+        await usuarios_col.update_one(
+            {"_id": self.uid},
+            {"$set": {"pico_activo": nuevo_pico_obj}}
+        )
+
+        # Recargamos los datos para refrescar la vista del inventario
+        datos = await usuarios_col.find_one({"_id": self.uid})
+        minerales_usuario = datos.get("minerales", {})
+        picos_usuario = datos.get("picos", ["Pico de Madera (Por defecto)"])
+        pico_actual = datos.get("pico_activo", {}).get("nombre", "Pico de Madera")
+
+        texto_minerales = ""
+        if minerales_usuario:
+            for min_nombre, cantidad in minerales_usuario.items():
+                if cantidad > 0:
+                    texto_minerales += f"• **{min_nombre}**: `{cantidad}`\n"
+        if not texto_minerales:
+            texto_minerales = "No tienes minerales guardados."
+
+        nuevo_texto = (
+            f"🎒 **Inventario de {interaction.user.name}**\n\n"
+            f"⛏️ **Pico Equipado:** {pico_actual}\n"
+            f"📋 **Picos Disponibles:** {', '.join(picos_usuario)}\n\n"
+            f"💎 **Minerales:**\n{texto_minerales}"
+        )
+
+        nueva_vista = VistaInventarioConEquipamiento(self.uid, picos_usuario, pico_actual)
+        await interaction.response.edit_message(content=nuevo_texto, view=nueva_vista)
+
+
+@bot.tree.command(name="inventario", description="Muestra tu inventario, minerales y te permite equipar picos.")
+@app_commands.checks.cooldown(1, 5)
 async def inventario(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
@@ -514,8 +735,9 @@ async def inventario(interaction: discord.Interaction):
     datos = await usuarios_col.find_one({"_id": uid})
     minerales_usuario = datos.get("minerales", {})
     picos_usuario = datos.get("picos", ["Pico de Madera (Por defecto)"])
-    pico_actual = datos.get("pico_activo", {"nombre": "Pico de Madera", "bonus": 0})
-    
+    pico_actual = datos.get("pico_activo", {})
+    pico_nombre_actual = pico_actual.get('nombre', 'Pico de Madera')
+
     texto_minerales = ""
     if minerales_usuario:
         for min_nombre, cantidad in minerales_usuario.items():
@@ -523,54 +745,143 @@ async def inventario(interaction: discord.Interaction):
                 texto_minerales += f"• **{min_nombre}**: `{cantidad}`\n"
     else:
         texto_minerales = "No tienes minerales guardados."
-        
-    await interaction.followup.send(
+
+    mensaje_inventario = (
         f"🎒 **Inventario de {interaction.user.name}**\n\n"
-        f"🛠️ **Pico Equipado:** {pico_actual.get('nombre')} (+{pico_actual.get('bonus')}% probabilidad)\n"
+        f"⛏️ **Pico Equipado:** {pico_nombre_actual}\n"
         f"📋 **Picos Disponibles:** {', '.join(picos_usuario)}\n\n"
-        f"💎 **Minerales:**\n{texto_minerales}",
-        ephemeral=False
+        f"💎 **Minerales:**\n{texto_minerales}"
     )
 
-
-class VistaCrafteo(discord.ui.View):
-    def __init__(self, uid):
+    view = VistaInventarioConEquipamiento(uid, picos_usuario, pico_nombre_actual)
+    await interaction.followup.send(mensaje_inventario, view=view)
+class VistaSeleccionCrafteo(discord.ui.View):
+    def __init__(self, uid, recetas_dict):
         super().__init__(timeout=180)
         self.uid = uid
-
-    @discord.ui.button(label="Ver Recetas de Picos", style=discord.ButtonStyle.primary, emoji="🛠️")
-    async def craftear_menu(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if str(interaction.user.id) != self.uid:
-            return await interaction.response.send_message("❌ No puedes usar este menú.", ephemeral=True)
-            
-        await asegurar_usuario(self.uid)
-        config = await usuarios_col.find_one({"_id": "configuracion_global"})
-        recetas = config.get("recetas_crafteo", {}) if config else {}
+        self.recetas_dict = recetas_dict
         
-        if not recetas:
-            return await interaction.response.send_message("❌ No hay picos configurados por los administradores todavía.", ephemeral=True)
+        options = []
+        for nombre, info in recetas_dict.items():
+            bonus = info.get('bonus', 0)
+            options.append(discord.SelectOption(label=nombre, description=f"Bonus: +{bonus}% | Ver receta y craftear"))
+        
+        if not options:
+            options.append(discord.SelectOption(label="No hay picos", description="Un administrador debe añadir recetas con addcrafteo"))
+
+        self.select_item = discord.ui.Select(placeholder="Selecciona un pico para ver su receta...", options=options)
+        self.select_item.callback = self.seleccionar_callback
+        self.add_item(self.select_item)
+
+    async def seleccionar_callback(self, interaction: discord.Interaction):
+        if str(interaction.user.id) != self.uid:
+            return await interaction.response.send_message("❌ Este menú no es para ti.", ephemeral=True)
+        
+        item_elegido = self.select_item.values[0]
+        info_receta = self.recetas_dict.get(item_elegido, {})
+        costos = info_receta.get("costos", {}) # O si guardas los costos directos, ajústalo aquí
+        bonus = info_receta.get("bonus", 0)
+        
+        vista_boton = VistaBotonCrafteo(self.uid, item_elegido, info_receta, self.recetas_dict)
+        
+        texto_receta = f"🛠️ **Receta para craftear: `{item_elegido}`** (+{bonus}% bonus)\n\n**Materiales necesarios:**\n"
+        if isinstance(costos, dict) and costos:
+            for mat, cant in costos.items():
+                texto_receta += f"• **{mat}**: `{cant}` unidades\n"
+        else:
+            texto_receta += "• No hay costos configurados para este pico.\n"
             
-        msg = "🛠️ **Menú de Crafteo de Picos Disponibles:**\n"
-        for pico_nombre, info in recetas.items():
-            costos_str = ", f'{cant}x {min_name}' for min_name, cant in info['costos'].items()"
-            msg += f"• **{pico_nombre}** (+{info['bonus']}% bonus) -> Costos configurados\n"
-            
-        await interaction.response.edit_message(content=msg, view=None)
+        texto_receta += "\n¡Haz clic en el botón de abajo para fabricarlo!"
+        
+        await interaction.response.edit_message(content=texto_receta, view=vista_boton)
 
 
-# /crafteo
-@bot.tree.command(name="crafteo", description="Abre el menú de crafteo para crear picos mejores.")
-async def crafteo(interaction: discord.Interaction):
+class VistaBotonCrafteo(discord.ui.View):
+    def __init__(self, uid, item, info_receta, recetas_dict):
+        super().__init__(timeout=180)
+        self.uid = uid
+        self.item = item
+        self.info_receta = info_receta
+        self.recetas_dict = recetas_dict
+
+    @discord.ui.button(label="🔨 ¡Craftear Ahora!", style=discord.ButtonStyle.green)
+    async def boton_craftear(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if str(interaction.user.id) != self.uid:
+            return await interaction.response.send_message("❌ No puedes usar este botón.", ephemeral=True)
+        
+        await asegurar_usuario(self.uid)
+        datos = await usuarios_col.find_one({"_id": self.uid})
+        
+        # Obtenemos los minerales reales del usuario según tu estructura
+        minerales_usuario = datos.get("minerales", {})
+        pico_actual = datos.get("pico_activo", {}).get("nombre", "Pico de Madera")
+        
+        costos = self.info_receta.get("costos", {})
+
+        # Validar materiales y calcular faltantes
+        materiales_faltantes = {}
+        for mat, requerido in costos.items():
+            tenido = minerales_usuario.get(mat, 0)
+            if tenido < requerido:
+                materiales_faltantes[mat] = requerido - tenido
+
+        if materiales_faltantes:
+            texto_faltantes = f"❌ **No tienes suficientes minerales.** (Llevas equipado: `{pico_actual}`). Te falta:\n"
+            for mat, faltan in materiales_faltantes.items():
+                texto_faltantes += f"• **{mat}**: te faltan `{faltan}` unidades\n"
+            return await interaction.response.send_message(texto_faltantes, ephemeral=True)
+
+        # Descontar minerales y añadir el pico al inventario/picos del usuario
+        nuevos_minerales = minerales_usuario.copy()
+        for mat, requerido in costos.items():
+            nuevos_minerales[mat] -= requerido
+            
+        picos_usuario = datos.get("picos", ["Pico de Madera (Por defecto)"])
+        if self.item not in picos_usuario:
+            picos_usuario.append(self.item)
+
+        await usuarios_col.update_one(
+            {"_id": self.uid},
+            {
+                "$set": {
+                    "minerales": nuevos_minerales,
+                    "picos": picos_usuario
+                }
+            }
+        )
+
+        await interaction.response.send_message(f"✅ ¡Has crafteo exitosamente el pico **{self.item}**! Ya está disponible en tus picos.", ephemeral=True)
+
+    @discord.ui.button(label="↩️ Volver al Menú", style=discord.ButtonStyle.gray)
+    async def volver(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if str(interaction.user.id) != self.uid:
+            return await interaction.response.send_message("❌ No puedes usar este botón.", ephemeral=True)
+        
+        vista_principal = VistaSeleccionCrafteo(self.uid, self.recetas_dict)
+        await interaction.response.edit_message(content="🛠️ **Menú de Crafteo**\nSelecciona un pico del menú desplegable para ver su receta:", view=vista_principal)
+
+
+@bot.tree.command(name="craftteo", description="Abre el menú de crafteo de picos interactivo.")
+@app_commands.checks.cooldown(1, 10)
+async def craftteo(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
     
-    view = VistaCrafteo(uid)
+    # Leemos la configuración global exactamente como lo haces en tu código actual
+    config = await usuarios_col.find_one({"_id": "configuracion_global"})
+    recetas = config.get("recetas_crafteo", {}) if config else {}
+    
+    if not recetas:
+        return await interaction.followup.send("❌ No hay picos ni recetas configuradas por el administrador todavía.", ephemeral=True)
+    
+    view = VistaSeleccionCrafteo(uid, recetas)
     await interaction.followup.send(
-        "🛠️ Bienvenido al sistema de crafteo. Haz clic abajo para ver los picos disponibles:",
+        "🛠️ **Menú de Crafteo de Picos**\nSelecciona un pico del menú desplegable para ver su receta:",
         view=view,
-        ephemeral=True
-    )
-
+        ephemeral=False
+        )
+                                 
 
 # /addcrafteo (Solo Administradores)
 @bot.tree.command(name="addcrafteo", description="Configura los materiales y bonos de un pico crafteable (Admin).")
