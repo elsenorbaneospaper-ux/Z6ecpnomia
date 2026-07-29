@@ -115,7 +115,7 @@ async def balance(interaction: discord.Interaction, usuario: discord.Member = No
 @bot.tree.command(name="dinero", description="Consulta el dinero en mano de un usuario.")
 @app_commands.describe(usuario="Usuario opcional a consultar")
 async def dinero(interaction: discord.Interaction, usuario: discord.Member = None):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     target = usuario or interaction.user
     uid = str(target.id)
     
@@ -128,7 +128,7 @@ async def dinero(interaction: discord.Interaction, usuario: discord.Member = Non
 @bot.tree.command(name="verbanco", description="Consulta el dinero guardado en el banco.")
 @app_commands.describe(usuario="Usuario opcional a consultar")
 async def verbanco(interaction: discord.Interaction, usuario: discord.Member = None):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     target = usuario or interaction.user
     uid = str(target.id)
     
@@ -142,7 +142,7 @@ async def verbanco(interaction: discord.Interaction, usuario: discord.Member = N
 @bot.tree.command(name="addbanco", description="Deposita dinero en el banco.")
 @app_commands.describe(cantidad="Cantidad a depositar (número o 'all' para todo)")
 async def addbanco(interaction: discord.Interaction, cantidad: str):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     
     await asegurar_usuario(uid)
@@ -178,7 +178,7 @@ async def addbanco(interaction: discord.Interaction, cantidad: str):
 @bot.tree.command(name="sacarbanco", description="Retira dinero del banco a tu mano.")
 @app_commands.describe(cantidad="Cantidad a retirar (número o 'all' para todo)")
 async def sacarbanco(interaction: discord.Interaction, cantidad: str):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     
     await asegurar_usuario(uid)
@@ -214,7 +214,7 @@ async def sacarbanco(interaction: discord.Interaction, cantidad: str):
 @bot.tree.command(name="transferir", description="Transfiere dinero a otro usuario.")
 @app_commands.describe(usuario="Usuario a quien transferir", cantidad="Cantidad a transferir (número o 'all' para todo)")
 async def transferir(interaction: discord.Interaction, usuario: discord.Member, cantidad: str):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     
     if usuario.bot or usuario.id == interaction.user.id:
         await interaction.followup.send("❌ No puedes transferir dinero a bots o a ti mismo.", ephemeral=True)
@@ -331,7 +331,7 @@ class VistaMinar(discord.ui.View):
 @bot.tree.command(name="minar", description="Explora minas para extraer minerales valiosos.")
 @app_commands.checks.cooldown(1, 300, key=lambda i: i.user.id)
 async def minar(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
     
@@ -356,7 +356,7 @@ async def minar(interaction: discord.Interaction):
 # --- COMANDO /top (Top 10 de usuarios con más balance/patrimonio) ---
 @bot.tree.command(name="top", description="Muestra el top 10 de los usuarios con más dinero y patrimonio en el servidor.")
 async def top(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
 
     # Buscar a todos los usuarios registrados y ordenarlos por su dinero total (mano + banco) en orden descendente
     usuarios_cursor = usuarios_col.find({})
@@ -404,7 +404,7 @@ async def top(interaction: discord.Interaction):
 # --- COMANDO /ayuda DEFINITIVO Y COMPLETO ---
 @bot.tree.command(name="ayuda", description="Muestra la lista de todos los comandos y sistemas disponibles del bot.")
 async def ayuda(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     
     embed = discord.Embed(
         title="📖 Menú General de Ayuda - Z6 Economía",
@@ -507,7 +507,7 @@ async def ayuda(interaction: discord.Interaction):
 # /inventario
 @bot.tree.command(name="inventario", description="Muestra tus minerales recolectados y picos actuales.")
 async def inventario(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
     
@@ -561,7 +561,7 @@ class VistaCrafteo(discord.ui.View):
 # /crafteo
 @bot.tree.command(name="crafteo", description="Abre el menú de crafteo para crear picos mejores.")
 async def crafteo(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     
     view = VistaCrafteo(uid)
@@ -625,7 +625,7 @@ async def addcrafteo(
 # /indice_minerales
 @bot.tree.command(name="indice_minerales", description="Muestra la lista, emojis y valores de todos los minerales disponibles.")
 async def indice_minerales(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     
     descripcion = "💎 **Índice de Minerales Disponibles:**\n\n"
     for idx, mineral in enumerate(MINERALES_DATA, start=1):
@@ -734,7 +734,7 @@ class VistaSuerteRaton(discord.ui.View):
 @app_commands.checks.cooldown(1, 360)
 @app_commands.describe(apuesta="Cantidad de dinero a apostar")
 async def suerte_raton(interaction: discord.Interaction, apuesta: int):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
     
@@ -824,7 +824,7 @@ class VistaPavoHambriento(discord.ui.View):
 @app_commands.checks.cooldown(1, 360)
 @app_commands.describe(apuesta="Cantidad de dinero a apostar")
 async def pavo_hambriento(interaction: discord.Interaction, apuesta: int):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
     
@@ -902,7 +902,7 @@ class VistaElegirTrabajo(discord.ui.View):
 
 @bot.tree.command(name="elegir_trabajo", description="Elige un nuevo trabajo disponible según tu nivel en chamba.")
 async def elegir_trabajo(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     await asegurar_perfil_trabajo(uid)
 
@@ -925,7 +925,7 @@ async def elegir_trabajo(interaction: discord.Interaction):
 # --- 2. COMANDO /nivel_chamba ---
 @bot.tree.command(name="nivel_chamba", description="Muestra tu nivel, XP actual y cuánto te falta para el siguiente trabajo.")
 async def nivel_chamba(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     await asegurar_perfil_trabajo(uid)
 
@@ -959,7 +959,7 @@ async def nivel_chamba(interaction: discord.Interaction):
 @bot.tree.command(name="trabajo", description="Trabaja en tu empleo actual para ganar dinero y experiencia.")
 @app_commands.checks.cooldown(1, 120)
 async def trabajo(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     await asegurar_perfil_trabajo(uid)
 
@@ -1008,7 +1008,7 @@ async def trabajo(interaction: discord.Interaction):
 @bot.tree.command(name="comprar_mascota", description="Adopta y personaliza tu compañero virtual.")
 @app_commands.describe(nombre="Nombre para tu mascota", emoji="Emoji representativo (ej: 🐶, 🐱)")
 async def comprar_mascota(interaction: discord.Interaction, nombre: str, emoji: str):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
 
@@ -1043,7 +1043,7 @@ async def comprar_mascota(interaction: discord.Interaction, nombre: str, emoji: 
 
 @bot.tree.command(name="mejorar_mascota", description="Sube de nivel a tu mascota para potenciar sus estadísticas y hallazgos.")
 async def mejorar_mascota(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
 
@@ -1073,7 +1073,7 @@ async def mejorar_mascota(interaction: discord.Interaction):
 @bot.tree.command(name="ver_mascota", description="Revisa el estado, nivel y nombre de tu mascota o la de otro usuario.")
 @app_commands.describe(usuario="Usuario del que deseas ver la mascota (opcional)")
 async def ver_mascota(interaction: discord.Interaction, usuario: discord.Member = None):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     target = usuario or interaction.user
     uid = str(target.id)
     await asegurar_usuario(uid)
@@ -1134,7 +1134,7 @@ class VistaCarreraMascota(discord.ui.View):
 @app_commands.describe(apuesta="Cantidad de dinero a apostar en la carrera")
 @app_commands.checks.cooldown(1, 300)
 async def carrera_mascota(interaction: discord.Interaction, apuesta: int):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
 
@@ -1162,7 +1162,7 @@ async def carrera_mascota(interaction: discord.Interaction, apuesta: int):
 @bot.tree.command(name="buscar_tesoro_mascota", description="Envía a tu mascota a buscar tesoros ocultos y desenterrar monedas.")
 @app_commands.checks.cooldown(1, 600)
 async def buscar_tesoro_mascota(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     uid = str(interaction.user.id)
     await asegurar_usuario(uid)
 
