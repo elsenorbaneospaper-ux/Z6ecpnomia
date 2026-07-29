@@ -835,7 +835,7 @@ async def rompemuros(interaction: discord.Interaction, apuesta: int):
         return await interaction.followup.send("❌ No tienes suficiente dinero.", ephemeral=True)
 
     # Primer intento automático para iniciar la cadena
-    exito_inicial = random.random() < 0.40
+    exito_inicial = random.random() < 0.50
     
     if not exito_inicial:
         await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": -apuesta}})
@@ -1410,7 +1410,7 @@ async def pavo_hambriento(interaction: discord.Interaction, apuesta: int):
         return await interaction.followup.send("❌ No tienes suficiente dinero o la apuesta no es válida.", ephemeral=True)
 
     # El límite de cuántas veces soporta el pavo antes de estallar (por ejemplo, entre 3 y 8 veces)
-    limite_explosion = random.randint(1, 4)
+    limite_explosion = random.randint(1, 5)
     
     view = VistaPavoHambriento(uid, apuesta, limite_explosion)
     
