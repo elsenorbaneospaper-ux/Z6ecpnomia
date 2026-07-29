@@ -1158,7 +1158,7 @@ async def carrera_mascota(interaction: discord.Interaction, apuesta: int):
 
 # --- BUSCAR TESORO CON MASCOTA (Cooldown: 10 minutos / 600 seg) ---
 @bot.tree.command(name="buscar_tesoro_mascota", description="Envía a tu mascota a buscar tesoros ocultos y desenterrar monedas.")
-@app_commands.cheks.cooldown(1, 600)
+@app_commands.checks.cooldown(1, 600)
 async def buscar_tesoro_mascota(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     uid = str(interaction.user.id)
