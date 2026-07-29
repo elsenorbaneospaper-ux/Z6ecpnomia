@@ -327,7 +327,7 @@ class VistaMinar(discord.ui.View):
 
 # /minar (con cooldown de 5 minutos / 300 segundos)
 @bot.tree.command(name="minar", description="Explora minas para extraer minerales valiosos.")
-@app_commands.checks.cooldown(1, 300, key=app_commands.CooldownType.user)
+@app_commands.checks.cooldown(1, 300, key=lambda i: i.user.id)
 async def minar(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     uid = str(interaction.user.id)
@@ -351,7 +351,157 @@ async def minar(interaction: discord.Interaction):
         ephemeral=True
     )
 
+# --- COMANDO /top (Top 10 de usuarios con más balance/patrimonio) ---
+@bot.tree.command(name="top", description="Muestra el top 10 de los usuarios con más dinero y patrimonio en el servidor.")
+async def top(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
 
+    # Buscar a todos los usuarios registrados y ordenarlos por su dinero total (mano + banco) en orden descendente
+    usuarios_cursor = usuarios_col.find({})
+    lista_usuarios = await usuarios_cursor.to_list(length=None)
+
+    if not lista_usuarios:
+        return await interaction.followup.send("❌ No hay registros de economía en la base de datos todavía.", ephemeral=True)
+
+    # Calcular el patrimonio total (dinero + banco) para cada usuario
+    datos_ordenados = []
+    for u in lista_usuarios:
+        uid = int(u["_id"])
+        dinero = u.get("dinero", 0)
+        banco = u.get("banco", 0)
+        patrimonio = dinero + banco
+        datos_ordenados.append((uid, patrimonio, dinero, banco))
+
+    # Ordenar de mayor a menor según el patrimonio total
+    datos_ordenados.sort(key=lambda x: x[1], reverse=True)
+    top_10 = datos_ordenados[:10]
+
+    embed = discord.Embed(
+        title="🏆 Top 10 - Ricos del Servidor",
+        description="Los usuarios con mayor patrimonio acumulado (Efectivo + Banco):",
+        color=discord.Color.gold()
+    )
+
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+    descripcion_ranking = ""
+    for idx, (uid, patrimonio, dinero, banco) in enumerate(top_10):
+        medalla = medals[idx]
+        usuario_obj = interaction.guild.get_member(uid)
+        nombre_usuario = usuario_obj.mention if usuario_obj else f"Usuario ID: {uid}"
+        
+        descripcion_ranking += (
+            f"{medalla} {nombre_usuario}\n"
+            f"   • Patrimonio: `{patrimonio:,}` monedas (💵 `{dinero:,}` | 🏦 `{banco:,}`)\n\n"
+        )
+
+    embed.description = descripcion_ranking
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+# --- COMANDO /ayuda DEFINITIVO Y COMPLETO ---
+@bot.tree.command(name="ayuda", description="Muestra la lista de todos los comandos y sistemas disponibles del bot.")
+async def ayuda(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    
+    embed = discord.Embed(
+        title="📖 Menú General de Ayuda - Z6 Economía",
+        description="Aquí tienes la lista completa de todos los sistemas y comandos integrados en tu bot:",
+        color=discord.Color.blue()
+    )
+    
+    # Economía, Banco y Rankings
+    embed.add_field(
+        name="💳 Economía, Banco y Rankings",
+        value=(
+            "• `/balance [usuario]` — Revisa tu dinero en efectivo, banco y patrimonio total.\n"
+            "• `/dinero` — Muestra información detallada de tus fondos.\n"
+            "• `/verbanco` — Consulta el estado actual de tu cuenta bancaria.\n"
+            "• `/addbanco [cantidad/all]` — Guarda tu dinero de forma segura en el banco.\n"
+            "• `/sacarbanco [cantidad/all]` — Saca dinero del banco para tenerlo en mano.\n"
+            "• `/transferir [usuario] [cantidad]` — Transfiere dinero en efectivo a otro usuario.\n"
+            "• `/top` — Muestra el top 10 de los usuarios más ricos del servidor."
+        ),
+        inline=False
+    )
+
+    # Minería, Inventario y Crafteo
+    embed.add_field(
+        name="⛏️ Minería, Inventario y Crafteo",
+        value=(
+            "• `/minar` — Extrae minerales valiosos de las profundidades.\n"
+            "• `/inventario` — Revisa tus minerales, gemas y materiales recolectados.\n"
+            "• `/vender` — Intercambia tus materiales mineros por dinero.\n"
+            "• `/craftteo` — Abre el menú de crafteo para crear herramientas o mejoras."
+        ),
+        inline=False
+    )
+
+    # Apuestas y Minijuegos
+    embed.add_field(
+        name="🎲 Apuestas y Minijuegos",
+        value=(
+            "• `/pavo_hambriento` — Participa en el minijuego de apuestas del pavo.\n"
+            "• `/suerte_raton` — Pon a prueba tu suerte con el minijuego del ratón.\n"
+            "• `/cohete_crash` — Apuesta y retira antes de que el cohete estrelle.\n"
+            "• `/rompemuros` — Juega a romper muros por recompensas en efectivo.\n"
+            "• `/cup_game` — Adivina en qué taza está el premio para multiplicar ganancias."
+        ),
+        inline=False
+    )
+
+    # Crimen y Robos
+    embed.add_field(
+        name="💰 Crimen y Robos",
+        value=(
+            "• `/crimen` — Comete un acto ilícito para ganar dinero (riesgo de multa/condena).\n"
+            "• `/robar [usuario]` — Intenta robar dinero en mano a otro usuario.\n"
+            "• `/robarbanco [usuario]` — Ataca el banco de otro usuario."
+        ),
+        inline=False
+    )
+    
+    # Sistema de Chamba (Trabajos)
+    embed.add_field(
+        name="👷 Sistema de Trabajos (Chamba)",
+        value=(
+            "• `/elegir_trabajo` — Selecciona tu empleo (8 trabajos en total).\n"
+            "• `/nivel_chamba` — Revisa tu XP, nivel de chamba y progreso para el próximo empleo.\n"
+            "• `/trabajo` — Realiza tu jornada laboral para ganar dinero y experiencia (Cooldown: 2 min)."
+        ),
+        inline=False
+    )
+    
+    # Sistema de Mascotas
+    embed.add_field(
+        name="🐾 Sistema de Mascotas",
+        value=(
+            "• `/comprar_mascota [nombre] [emoji]` — Adopta y personaliza tu compañero.\n"
+            "• `/mejorar_mascota` — Sube de nivel a tu mascota para potenciar estadísticas.\n"
+            "• `/ver_mascota [usuario]` — Consulta el estado y nivel de una mascota.\n"
+            "• `/carrera_mascota [apuesta]` — Compite con tu mascota contra Z6.\n"
+            "• `/buscar_tesoro_mascota` — Envía a tu mascota a desenterrar tesoros ocultos."
+        ),
+        inline=False
+    )
+    
+    # Eventos y Administración (Dueños)
+    embed.add_field(
+        name="🛠️ Eventos y Administración (Solo Dueños y admins)",
+        value=(
+            "• `/sorteo_economia [premio] [tiempo] [cantidad_reroll] [tiempo_claim] [imagen]` — Sorteo interactivo con botón de reclamo, caducidad, reroll automático e imagen.\n"
+            "• `/dar [usuario] [cantidad]` — Entrega dinero directamente a un usuario.\n"
+            "• `/quitar [usuario] [cantidad/all]` — Retira dinero o vacía el saldo de un usuario.\n"
+            "• `/addbanco [usuario] [cantidad]` — Añade fondos al banco de un usuario.\n"
+            "• `/sacarbanco [usuario] [cantidad]` — Retira fondos del banco de un usuario.\n"
+            "• `/reset-eco` — Resetea por completo la economía del servidor."
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="¡Usa los comandos correctamente y diviértete en el servidor!")
+    await interaction.followup.send(embed=embed, ephemeral=True)
+    
 # /inventario
 @bot.tree.command(name="inventario", description="Muestra tus minerales recolectados y picos actuales.")
 async def inventario(interaction: discord.Interaction):
