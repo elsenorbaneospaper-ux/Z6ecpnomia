@@ -693,3 +693,591 @@ async def pavo_hambriento(interaction: discord.Interaction, apuesta: int):
         ephemeral=True
     )
     
+
+# --- CONFIGURACIÓN DE LOS 8 TRABAJOS (Actualizada con pago máximo de 3000 y albañil hasta 500) ---
+TRABAJOS_DATA = [
+    {"nivel_req": 1, "nombre": "Albañil 🧱", "min_pago": 150, "max_pago": 500, "xp_da": 25},
+    {"nivel_req": 3, "nombre": "Repartidor 🛵", "min_pago": 300, "max_pago": 850, "xp_da": 30},
+    {"nivel_req": 6, "nombre": "Cajero 🛒", "min_pago": 500, "max_pago": 1200, "xp_da": 35},
+    {"nivel_req": 10, "nombre": "Mecánico 🔧", "min_pago": 800, "max_pago": 1600, "xp_da": 40},
+    {"nivel_req": 15, "nombre": "Programador 💻", "min_pago": 1100, "max_pago": 2100, "xp_da": 45},
+    {"nivel_req": 21, "nombre": "Policía 👮", "min_pago": 1500, "max_pago": 2500, "xp_da": 50},
+    {"nivel_req": 28, "nombre": "Médico 🩺", "min_pago": 2000, "max_pago": 2800, "xp_da": 55},
+    {"nivel_req": 36, "nombre": "Empresario 👔", "min_pago": 2500, "max_pago": 3000, "xp_da": 60},
+]
+
+async def asegurar_perfil_trabajo(uid: str):
+    await asegurar_usuario(uid)
+    await usuarios_col.update_one(
+        {"_id": uid, "trabajo": {"$exists": False}},
+        {"$set": {"trabajo": 0, "xp_chamba": 0, "nivel_chamba": 1}}
+    )
+
+
+# --- 1. COMANDO /elegir_trabajo ---
+class VistaElegirTrabajo(discord.ui.View):
+    def __init__(self, uid, nivel_usuario):
+        super().__init__(timeout=60)
+        self.uid = uid
+        
+        for idx, trabajo in enumerate(TRABAJOS_DATA):
+            disabled = nivel_usuario < trabajo["nivel_req"]
+            estilo = discord.ButtonStyle.secondary if disabled else discord.ButtonStyle.success
+            
+            btn = discord.ui.Button(
+                label=f"Nivel {trabajo['nivel_req']}: {trabajo['nombre'].split()[0]}",
+                style=estilo,
+                custom_id=f"trabajo_{idx}",
+                disabled=disabled
+            )
+            btn.callback = self.callback_btn
+            self.add_item(btn)
+
+    async def callback_btn(self, interaction: discord.Interaction):
+        if str(interaction.user.id) != self.uid:
+            return await interaction.response.send_message("❌ Este menú no es tuyo.", ephemeral=True)
+
+        idx = int(interaction.data["custom_id"].split("_")[1])
+        trabajo_elegido = TRABAJOS_DATA[idx]
+
+        await usuarios_col.update_one({"_id": self.uid}, {"$set": {"trabajo": idx}})
+        
+        await interaction.response.edit_message(
+            content=f"✅ ¡Has cambiado exitosamente tu empleo a **{trabajo_elegido['nombre']}**!",
+            view=None
+        )
+
+
+@bot.tree.command(name="elegir_trabajo", description="Elige un nuevo trabajo disponible según tu nivel en chamba.")
+async def elegir_trabajo(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    uid = str(interaction.user.id)
+    await asegurar_perfil_trabajo(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    nivel_chamba = datos.get("nivel_chamba", 1)
+    trabajo_actual_idx = datos.get("trabajo", 0)
+
+    if nivel_chamba < 3:
+        return await interaction.followup.send("❌ Necesitas ser al menos **Nivel 3** en chamba para poder elegir un trabajo.", ephemeral=True)
+
+    descripcion = "👷 **Selecciona tu nuevo empleo:**\nLos trabajos avanzados requieren mayor nivel pero pagan mucho más.\n\n"
+    for idx, t in enumerate(TRABAJOS_DATA):
+        estado = "✅ (Actual)" if idx == trabajo_actual_idx else ("🔒 (Bloqueado)" if nivel_chamba < t["nivel_req"] else "🔓 (Disponible)")
+        descripcion += f"• **{t['nombre']}** — Req. Nivel {t['nivel_req']} {estado}\n"
+
+    view = VistaElegirTrabajo(uid, nivel_chamba)
+    await interaction.followup.send(descripcion, view=view, ephemeral=True)
+
+
+# --- 2. COMANDO /nivel_chamba ---
+@bot.tree.command(name="nivel_chamba", description="Muestra tu nivel, XP actual y cuánto te falta para el siguiente trabajo.")
+async def nivel_chamba(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    uid = str(interaction.user.id)
+    await asegurar_perfil_trabajo(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    nivel = datos.get("nivel_chamba", 1)
+    xp = datos.get("xp_chamba", 0)
+    trabajo_idx = datos.get("trabajo", 0)
+    trabajo_actual = TRABAJOS_DATA[trabajo_idx]
+
+    xp_necesaria = nivel * 100
+    
+    proximo_trabajo = None
+    for t in TRABAJOS_DATA:
+        if t["nivel_req"] > nivel:
+            proximo_trabajo = t
+            break
+
+    info_prox = f"• Próximo empleo: **{proximo_trabajo['nombre']}** (Requiere Nivel {proximo_trabajo['nivel_req']})" if proximo_trabajo else "• ¡Has alcanzado el rango máximo de empleos!"
+
+    await interaction.followup.send(
+        f"📊 **Estadísticas de Chamba de {interaction.user.name}**\n\n"
+        f"👔 Trabajo actual: **{trabajo_actual['nombre']}**\n"
+        f"⭐ Nivel en Chamba: `{nivel}`\n"
+        f"✨ Experiencia (XP): `{xp} / {xp_necesaria}`\n"
+        f"{info_prox}",
+        ephemeral=True
+    )
+
+
+# --- 3. COMANDO /trabajo (Cooldown: 2 minutos / 120 seg) ---
+@bot.tree.command(name="trabajo", description="Trabaja en tu empleo actual para ganar dinero y experiencia.")
+@app_commands.cooldown(1, 120, key=app_commands.CooldownType.user)
+async def trabajo(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    uid = str(interaction.user.id)
+    await asegurar_perfil_trabajo(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    trabajo_idx = datos.get("trabajo", 0)
+    nivel = datos.get("nivel_chamba", 1)
+    xp = datos.get("xp_chamba", 0)
+
+    t_info = TRABAJOS_DATA[trabajo_idx]
+    
+    # Generar pago adaptado al rango del trabajo seleccionado (máximo 3000)
+    pago = random.randint(t_info["min_pago"], t_info["max_pago"])
+    ganancia_xp = t_info["xp_da"]
+
+    nueva_xp = xp + ganancia_xp
+    nuevo_nivel = nivel
+    xp_limite = nivel * 100
+
+    subio_nivel = False
+    if nueva_xp >= xp_limite:
+        nueva_xp -= xp_limite
+        nuevo_nivel += 1
+        subio_nivel = True
+
+    await usuarios_col.update_one(
+        {"_id": uid},
+        {
+            "$inc": {"dinero": pago},
+            "$set": {"xp_chamba": nueva_xp, "nivel_chamba": nuevo_nivel}
+        }
+    )
+
+    msg = (
+        f"💼 **¡Jornada laboral completada como {t_info['nombre']}!**\n"
+        f"💵 Ganaste: **{pago}** monedas\n"
+        f"✨ Experiencia obtenida: `+{ganancia_xp} XP`"
+    )
+
+    if subio_nivel:
+        msg += f"\n\n🎉 **¡FELICIDADES! Subiste al Nivel {nuevo_nivel} de Chamba.** ¡Revisa /elegir_trabajo para ver si hay nuevos empleos!"
+
+    await interaction.followup.send(msg, ephemeral=True)
+
+# --- COMANDOS DE MASCOTAS (Integrados con la estructura base) ---
+
+@bot.tree.command(name="comprar_mascota", description="Adopta y personaliza tu compañero virtual.")
+@app_commands.describe(nombre="Nombre para tu mascota", emoji="Emoji representativo (ej: 🐶, 🐱)")
+async def comprar_mascota(interaction: discord.Interaction, nombre: str, emoji: str):
+    await interaction.response.defer(ephemeral=True)
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    if datos.get("tiene_mascota_propia", False):
+        return await interaction.followup.send("❌ Ya tienes una mascota adoptada.", ephemeral=True)
+
+    # Costo por adopción (puedes ajustarlo si deseas)
+    costo = 1000
+    if datos.get("dinero", 0) < costo:
+        return await interaction.followup.send(f"❌ No tienes suficiente dinero. Adoptar una mascota cuesta **{costo}** monedas.", ephemeral=True)
+
+    await usuarios_col.update_one(
+        {"_id": uid},
+        {
+            "$inc": {"dinero": -costo},
+            "$set": {
+                "tiene_mascota_propia": True,
+                "mascota_nombre": nombre,
+                "mascota_emoji": emoji,
+                "mascota_nivel": 1
+            }
+        }
+    )
+
+    await interaction.followup.send(
+        f"🎉 **¡Felicidades por tu adopción!**\n"
+        f"Has adoptado a {emoji} **{nombre}** con éxito.",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="mejorar_mascota", description="Sube de nivel a tu mascota para potenciar sus estadísticas y hallazgos.")
+async def mejorar_mascota(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    if not datos.get("tiene_mascota_propia", False):
+        return await interaction.followup.send("❌ No tienes ninguna mascota. Usa `/comprar_mascota` primero.", ephemeral=True)
+
+    nivel_actual = datos.get("mascota_nivel", 1)
+    costo_mejora = nivel_actual * 750  # El costo sube según el nivel
+
+    if datos.get("dinero", 0) < costo_mejora:
+        return await interaction.followup.send(f"❌ No tienes suficiente dinero. Subir de nivel a tu mascota cuesta **{costo_mejora}** monedas.", ephemeral=True)
+
+    await usuarios_col.update_one(
+        {"_id": uid},
+        {
+            "$inc": {"dinero": -costo_mejora, "mascota_nivel": 1}
+        }
+    )
+
+    await interaction.followup.send(
+        f"⭐ **¡Mejora exitosa!** Tu mascota {datos.get('mascota_emoji')} **{datos.get('mascota_nombre')}** ha subido al **Nivel {nivel_actual + 1}**.",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="ver_mascota", description="Revisa el estado, nivel y nombre de tu mascota o la de otro usuario.")
+@app_commands.describe(usuario="Usuario del que deseas ver la mascota (opcional)")
+async def ver_mascota(interaction: discord.Interaction, usuario: discord.Member = None):
+    await interaction.response.defer(ephemeral=True)
+    target = usuario or interaction.user
+    uid = str(target.id)
+    await asegurar_usuario(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    if not datos.get("tiene_mascota_propia", False):
+        msg = f"❌ {target.mention} no tiene ninguna mascota adoptada." if usuario else "❌ No tienes ninguna mascota adoptada."
+        return await interaction.followup.send(msg, ephemeral=True)
+
+    nombre = datos.get("mascota_nombre", "Mascota")
+    emoji = datos.get("mascota_emoji", "🐾")
+    nivel = datos.get("mascota_nivel", 1)
+
+    await interaction.followup.send(
+        f"🐾 **Información de Mascota ({target.name})**\n\n"
+        f"• Nombre: {emoji} **{nombre}**\n"
+        f"• Nivel: `{nivel}`\n"
+        f"• Estado: ¡Lista para buscar tesoros con `/buscar_tesoro_mascota`!",
+        ephemeral=True
+    )
+
+
+# --- CARRERA DE MASCOTAS (/carrera_mascota [apuesta]) ---
+class VistaCarreraMascota(discord.ui.View):
+    def __init__(self, uid, apuesta):
+        super().__init__(timeout=45)
+        self.uid = uid
+        self.apuesta = apuesta
+
+    @discord.ui.button(label="¡Competir contra Z6 🤖!", style=discord.ButtonStyle.primary, emoji="🏁")
+    async def competir_z6(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if str(interaction.user.id) != self.uid:
+            return await interaction.response.send_message("❌ Esta carrera no es tuya.", ephemeral=True)
+
+        for child in self.children:
+            child.disabled = True
+
+        # Probabilidad de ganar a Z6 (50%)
+        gana_usuario = random.choice([True, False])
+        await asegurar_usuario(self.uid)
+
+        if gana_usuario:
+            premio = self.apuesta * 2
+            await usuarios_col.update_one({"_id": self.uid}, {"$inc": {"dinero": self.apuesta}}) # Gana su apuesta de vuelta + ganancia neta igual
+            await interaction.response.edit_message(
+                content=f"🏆 **¡Victoria en la carrera!** Tu mascota corrió con todo y le ganó a Z6. Ganaste **{premio}** monedas.",
+                view=self
+            )
+        else:
+            await usuarios_col.update_one({"_id": self.uid}, {"$inc": {"dinero": -self.apuesta}})
+            await interaction.response.edit_message(
+                content=f"💨 **¡Derrota!** Z6 fue más rápido esta vez. Perdiste tu apuesta de **{self.apuesta}** monedas.",
+                view=self
+            )
+
+
+@bot.tree.command(name="carrera_mascota", description="Pon a competir a tu mascota contra Z6 para duplicar tu apuesta.")
+@app_commands.describe(apuesta="Cantidad de dinero a apostar en la carrera")
+@app_commands.cooldown(1, 300, key=app_commands.CooldownType.user)
+async def carrera_mascota(interaction: discord.Interaction, apuesta: int):
+    await interaction.response.defer(ephemeral=True)
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    if not datos.get("tiene_mascota_propia", False):
+        return await interaction.followup.send("❌ Necesitas adoptar una mascota con `/comprar_mascota` para competir.", ephemeral=True)
+
+    if datos.get("dinero", 0) < apuesta or apuesta <= 0:
+        return await interaction.followup.send("❌ No tienes suficiente dinero o la cantidad no es válida.", ephemeral=True)
+
+    nombre_mascota = datos.get("mascota_nombre", "Mascota")
+    emoji_mascota = datos.get("mascota_emoji", "🐾")
+
+    view = VistaCarreraMascota(uid, apuesta)
+    await interaction.followup.send(
+        f"🏁 **¡Carrera de Mascotas!**\n"
+        f"Tu mascota {emoji_mascota} **{nombre_mascota}** está lista en la línea de salida.\n"
+        f"Apuesta actual: `{apuesta}` monedas. Presiona el botón para iniciar:",
+        view=view,
+        ephemeral=True
+    )
+
+
+# --- BUSCAR TESORO CON MASCOTA (Cooldown: 10 minutos / 600 seg) ---
+@bot.tree.command(name="buscar_tesoro_mascota", description="Envía a tu mascota a buscar tesoros ocultos y desenterrar monedas.")
+@app_commands.cooldown(1, 600, key=app_commands.CooldownType.user)
+async def buscar_tesoro_mascota(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    
+    if not datos.get("tiene_mascota_propia", False):
+        return await interaction.followup.send("❌ No tienes ninguna mascota adoptada. Usa `/comprar_mascota` primero.", ephemeral=True)
+
+    nombre_mascota = datos.get("mascota_nombre", "Mascota")
+    emoji_mascota = datos.get("mascota_emoji", "🐾")
+    nivel_mascota = datos.get("mascota_nivel", 1)
+
+    # Varía según el nivel de la mascota, topado en un máximo de 8,000 monedas
+    calculo_premio = min(200 + (nivel_mascota * 400) + random.randint(0, 600), 8000)
+
+    await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": calculo_premio}})
+
+    await interaction.followup.send(
+        f"🗺️ **¡Expedición de Tesoro completada!**\n"
+        f"<@{uid}>, tu mascota {emoji_mascota} **{nombre_mascota}** ha encontrado **{calculo_premio}** monedas desenterrándolas del suelo.",
+        ephemeral=False
+    )
+
+import asyncio
+import re
+
+# IDs de los dueños permitidos para usar estos comandos
+DUENOS_IDS = {
+    1491476806203740373,
+    1209982260892409920,
+    1439675836746829986
+}
+
+def es_dueno(interaction: discord.Interaction) -> bool:
+    return interaction.user.id in DUENOS_IDS
+
+def parsear_tiempo(tiempo_str: str) -> int:
+    """Convierte cadenas como '3m', '1h', '30s' a segundos totales."""
+    match = re.match(r"^(\d+)([smhd])$", tiempo_str.lower().strip())
+    if not match:
+        return 0
+    cantidad, unidad = int(match.group(1)), match.group(2)
+    multiplicadores = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    return cantidad * multiplicadores.get(unidad, 1)
+
+
+# --- VISTA PARA RECLAMAR EL SORTEO ---
+class VistaClaimSorteo(discord.ui.View):
+    def __init__(self, ganador_id: int, premio: str, tiempo_claim_seg: int, original_interaction: discord.Interaction, rerolls_restantes: int, tiempo_total_str: str, imagen_url: str):
+        super().__init__(timeout=tiempo_claim_seg)
+        self.ganador_id = ganador_id
+        self.premio = premio
+        self.original_interaction = original_interaction
+        self.rerolls_restantes = rerolls_restantes
+        self.tiempo_total_str = tiempo_total_str
+        self.imagen_url = imagen_url
+        self.reclamado = False
+
+    @discord.ui.button(label="🎉 ¡Reclamar Sorteo!", style=discord.ButtonStyle.success)
+    async def reclamar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.ganador_id:
+            return await interaction.response.send_message("❌ ¡Este sorteo no es para ti! Debes esperar a que expire el tiempo de reclamo si no lo reclama.", ephemeral=True)
+
+        self.reclamado = True
+        for child in self.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(
+            content=f"🎁 **¡Sorteo finalizado y reclamado con éxito!**\n"
+                    f"🏆 Ganador: <@{self.ganador_id}>\n"
+                    f"🏆 Premio: **{self.premio}**",
+            view=self
+        )
+        self.stop()
+
+    async def on_timeout(self):
+        if self.reclamado:
+            return
+
+        # Desactivar botones si expira el tiempo de claim
+        for child in self.children:
+            child.disabled = True
+
+        try:
+            await self.message.edit(
+                content=f"⏳ **Tiempo de reclamo expirado.** El ganador (<@{self.ganador_id}>) no reclamó a tiempo.",
+                view=self
+            )
+        except Exception:
+            pass
+
+        # Realizar Reroll automático si quedan intentos
+        if self.rerolls_restantes > 0:
+            await ejecutar_reroll_automatico(self.original_interaction, self.premio, self.rerolls_restantes - 1, self.tiempo_total_str, self.imagen_url)
+
+
+async def ejecutar_reroll_automatico(interaction: discord.Interaction, premio: str, rerolls_restantes: int, tiempo_str: str, imagen_url: str):
+    # Obtener los miembros del canal/servidor para seleccionar un nuevo ganador al azar
+    guild = interaction.guild
+    miembros = [m for m in guild.members if not m.bot]
+    
+    if not miembros:
+        return await interaction.followup.send("❌ No hay participantes válidos para hacer reroll automático.", ephemeral=False)
+
+    nuevo_ganador = random.choice(miembros)
+    tiempo_claim_seg = 180  # 3 minutos por defecto para el claim del reroll
+
+    embed = discord.Embed(
+        title="🎁 ¡Reroll Automático de Sorteo!",
+        description=f"El ganador anterior no reclamó a tiempo.\n\n"
+                    f"🏆 Premio: **{premio}**\n"
+                    f"👤 Nuevo Ganador Mencionado: {nuevo_ganador.mention}\n"
+                    f"⏰ Tienes **3 minutos** para presionar el botón y reclamar.",
+        color=discord.Color.gold()
+    )
+    if imagen_url:
+        embed.set_image(url=imagen_url)
+
+    view = VistaClaimSorteo(nuevo_ganador.id, premio, tiempo_claim_seg, interaction, rerolls_restantes, tiempo_str, imagen_url)
+    
+    msg = await interaction.channel.send(content=f"🚨 **¡Reroll automático!** {nuevo_ganador.mention}", embed=embed, view=view)
+    view.message = msg
+
+
+# --- 1. COMANDO /sorteo_economia (Solo Dueños) ---
+@bot.tree.command(name="sorteo_economia", description="Sorteo interactivo avanzado con botón de reclamo y caducidad automática.")
+@app_commands.describe(
+    premio="Descripción o nombre del premio",
+    tiempo="Duración del sorteo (ej: 1h, 30m, 10s)",
+    cantidad_reroll="Número de veces que se repetirá automáticamente si no se reclama",
+    tiempo_claim="Tiempo límite para reclamar (ej: 3m)",
+    imagen="Imagen adjunta desde tus archivos para el sorteo"
+)
+async def sorteo_economia(
+    interaction: discord.Interaction, 
+    premio: str, 
+    tiempo: str, 
+    cantidad_reroll: int, 
+    tiempo_claim: str, 
+    imagen: discord.Attachment = None
+):
+    if not es_dueno(interaction):
+        return await interaction.response.send_message("❌ No tienes permisos para usar este comando de dueño.", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True)
+
+    t_segundos = parsear_tiempo(tiempo)
+    c_segundos = parsear_tiempo(tiempo_claim)
+
+    if t_segundos <= 0 or c_segundos <= 0:
+        return await interaction.followup.send("❌ Formato de tiempo inválido. Usa sufijos como `s`, `m`, `h` (ej: `3m`, `1h`).", ephemeral=True)
+
+    imagen_url = imagen.url if imagen else None
+
+    embed = discord.Embed(
+        title="🎁 ¡Nuevo Sorteo de Economía!",
+        description=f"🏆 Premio: **{premio}**\n"
+                    f"⏳ Tiempo restante para el sorteo: **{tiempo}**\n"
+                    f"🔄 Rerolls disponibles: `{cantidad_reroll}`\n"
+                    f"⏱️ Tiempo límite de reclamo: `{tiempo_claim}`",
+        color=discord.Color.blurple()
+    )
+    if imagen_url:
+        embed.set_image(url=imagen_url)
+
+    msg_sorteo = await interaction.channel.send(embed=embed)
+    await interaction.followup.send("✅ Sorteo iniciado correctamente en el canal.", ephemeral=True)
+
+    # Esperar a que termine el tiempo del sorteo principal
+    await asyncio.sleep(t_segundos)
+
+    # Elegir ganador inicial
+    guild = interaction.guild
+    miembros = [m for m in guild.members if not m.bot]
+
+    if not miembros:
+        return await msg_sorteo.edit(content="❌ El sorteo terminó pero no hay participantes disponibles.", embed=None, view=None)
+
+    ganador_inicial = random.choice(miembros)
+
+    embed_ganador = discord.Embed(
+        title="🎉 ¡Sorteo Finalizado!",
+        description=f"🏆 Premio: **{premio}**\n"
+                    f"👑 Ganador: {ganador_inicial.mention}\n\n"
+                    f"⚠️ Tienes `{tiempo_claim}` para presionar el botón de abajo y reclamar.",
+        color=discord.Color.green()
+    )
+    if imagen_url:
+        embed_ganador.set_image(url=imagen_url)
+
+    view = VistaClaimSorteo(ganador_inicial.id, premio, c_segundos, interaction, cantidad_reroll, tiempo, imagen_url)
+    
+    await msg_sorteo.edit(content=f"🔔 **¡Tenemos un ganador!** {ganador_inicial.mention}", embed=embed_ganador, view=view)
+    view.message = msg_sorteo
+
+
+# --- 2. COMANDO /dar (Solo Dueños) ---
+@bot.tree.command(name="dar", description="Entrega dinero directamente a un usuario.")
+@app_commands.describe(usuario="Usuario al que se le entregará el dinero", cantidad="Cantidad de monedas a otorgar")
+async def dar(interaction: discord.Interaction, usuario: discord.Member, cantidad: int):
+    if not es_dueno(interaction):
+        return await interaction.response.send_message("❌ No tienes permisos para usar este comando de dueño.", ephemeral=True)
+
+    if cantidad <= 0:
+        return await interaction.response.send_message("❌ La cantidad debe ser mayor a 0.", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True)
+    uid = str(usuario.id)
+    await asegurar_usuario(uid)
+
+    await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": cantidad}})
+
+    await interaction.followup.send(f"✅ Se han entregado exitosamente **{cantidad}** monedas a {usuario.mention}.", ephemeral=True)
+
+
+# --- 3. COMANDO /quitar (Solo Dueños) ---
+@bot.tree.command(name="quitar", description="Retira dinero a un usuario o todo su saldo con 'all'.")
+@app_commands.describe(usuario="Usuario al que se le retirará el dinero", cantidad="Cantidad numérica o escribe 'all' para vaciarlo")
+async def quitar(interaction: discord.Interaction, usuario: discord.Member, cantidad: str):
+    if not es_dueno(interaction):
+        return await interaction.response.send_message("❌ No tienes permisos para usar este comando de dueño.", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True)
+    uid = str(usuario.id)
+    await asegurar_usuario(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    dinero_actual = datos.get("dinero", 0)
+
+    if cantidad.lower() == "all":
+        monto_a_quitar = dinero_actual
+        await usuarios_col.update_one({"_id": uid}, {"$set": {"dinero": 0}})
+        return await interaction.followup.send(f"✅ Se ha retirado todo el saldo (**{monto_a_quitar}** monedas) a {usuario.mention}.", ephemeral=True)
+
+    try:
+        monto = int(cantidad)
+    except ValueError:
+        return await interaction.followup.send("❌ Cantidad inválida. Ingresa un número o la palabra `all`.", ephemeral=True)
+
+    if monto <= 0:
+        return await interaction.followup.send("❌ La cantidad a retirar debe ser mayor a 0.", ephemeral=True)
+
+    monto_final = min(monto, dinero_actual)
+    await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": -monto_final}})
+
+    await interaction.followup.send(f"✅ Se han retirado **{monto_final}** monedas a {usuario.mention}.", ephemeral=True)
+
+
+# --- 4. COMANDO /reset-eco (Solo Dueños) ---
+@bot.tree.command(name="reset-eco", description="Resetea por completo la economía del servidor.")
+async def reset_eco(interaction: discord.Interaction):
+    if not es_dueno(interaction):
+        return await interaction.response.send_message("❌ No tienes permisos para usar este comando de dueño.", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True)
+
+    # Reiniciar el dinero de todos los usuarios registrados en la colección
+    await usuarios_col.update_many({}, {"$set": {"dinero": 1000, "banco": 0, "xp_chamba": 0, "nivel_chamba": 1, "trabajo": 0}})
+
+    await interaction.followup.send("⚠️ **¡Economía reseteada con éxito!** Todos los saldos y niveles de chamba han vuelto a sus valores iniciales.", ephemeral=True)
+
+# --- ARRANQUE DEL BOT Y SERVIDOR FLASK ---
+if __name__ == "__main__":
+    TOKEN = os.getenv("DISCORD_TOKEN")
+    if not TOKEN:
+        raise ValueError("❌ No se encontró la variable de entorno DISCORD_TOKEN.")
+    
+    bot.run(TOKEN)
+    
+        
