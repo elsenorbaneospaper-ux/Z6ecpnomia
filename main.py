@@ -577,14 +577,14 @@ async def rompemuros(interaction: discord.Interaction, apuesta: int):
         return await interaction.followup.send("❌ No tienes suficiente dinero.", ephemeral=True)
 
     # Primer intento automático para iniciar la cadena
-    exito_inicial = random.random() < 0.70 
+    exito_inicial = random.random() < 0.40
     
     if not exito_inicial:
         await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": -apuesta}})
         return await interaction.followup.send(f"🧱 El primer muro era demasiado duro y perdiste tu apuesta de `{apuesta:,}` monedas.", ephemeral=False)
 
     muros_rotos = 1
-    multiplicador = 2.0 # Primer muro otorga x2 inicial
+    multiplicador = 0.8 # Primer muro otorga x2 inicial
     view = VistaRompemuros(uid, apuesta, muros_rotos, multiplicador)
 
     await interaction.followup.send(
@@ -639,7 +639,7 @@ async def cohete_crash(interaction: discord.Interaction, apuesta: int):
 
     await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": -apuesta}})
 
-    punto_explosion = round(random.choice([1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0]), 1)
+    punto_explosion = round(random.choice([1.5, 2.0, 2.5, 3.0, 3.5,]), 1)
     view = VistaCohete(uid, apuesta)
     
     msg = await interaction.followup.send(
@@ -654,7 +654,7 @@ async def cohete_crash(interaction: discord.Interaction, apuesta: int):
         if not view.en_curso:
             break
         
-        view.multiplicador = round(view.multiplicador + 0.5, 1) # Sube +0.5 exactamente
+        view.multiplicador = round(view.multiplicador + 0.3, 1) # Sube +0.5 exactamente
         
         if view.multiplicador >= punto_explosion:
             view.en_curso = False
@@ -1152,7 +1152,7 @@ async def pavo_hambriento(interaction: discord.Interaction, apuesta: int):
         return await interaction.followup.send("❌ No tienes suficiente dinero o la apuesta no es válida.", ephemeral=True)
 
     # El límite de cuántas veces soporta el pavo antes de estallar (por ejemplo, entre 3 y 8 veces)
-    limite_explosion = random.randint(3, 8)
+    limite_explosion = random.randint(1, 4)
     
     view = VistaPavoHambriento(uid, apuesta, limite_explosion)
     
