@@ -455,7 +455,8 @@ async def ayuda(interaction: discord.Interaction):
             "• `/suerte_raton` — Pon a prueba tu suerte con el minijuego del ratón.\n"
             "• `/cohete_crash` — Apuesta y retira antes de que el cohete estrelle.\n"
             "• `/rompemuros` — Juega a romper muros por recompensas en efectivo.\n"
-            "• `/cup_game` — Adivina en qué taza está el premio para multiplicar ganancias."
+            "• `/run_bomb` _ Elige una casilla del 1 al 12 e intenta sobrevivir a las bombas y sus ondas expansivas que se extienden cada 1.5 segundos con un 20% de probabilidad de una bomba extra. (Cooldown: 8 minutos)."
+            "• `/cup_game` — Adivina en qué casilla de los 6 vasos se oculta la pelota con un solo intento para ganar un multiplicador de x3 de tu apuesta. (Cooldown: 5 minutos)."
         ),
         inline=False
     )
@@ -511,6 +512,165 @@ async def ayuda(interaction: discord.Interaction):
     
     embed.set_footer(text="¡Usa los comandos correctamente y diviértete en el servidor!")
     await interaction.followup.send(embed=embed, ephemeral=True)
+class VistaRunBomb(discord.ui.View):
+    def __init__(self, uid, apuesta, casilla_elegida):
+        super().__init__(timeout=60)
+        self.uid = uid
+        self.apuesta = apuesta
+        self.casilla_elegida = casilla_elegida
+        
+        for i in range(1, 13):
+            estilo = discord.ButtonStyle.green if i == casilla_elegida else discord.ButtonStyle.secondary
+            label_texto = f"🎯 [Tú] #{i}" if i == casilla_elegida else f"Casilla {i}"
+            button = discord.ui.Button(label=label_texto, style=estilo, custom_id=f"b_{i}", disabled=True)
+            self.add_item(button)
+
+
+@bot.tree.command(name="run_bomb", description="Selecciona una casilla y sobrevive a la expansión de las bombas.")
+@app_commands.checks.cooldown(1, 480) # Cooldown de 8 minutos (480 segundos)
+@app_commands.describe(apuesta="Cantidad de dinero a apostar", casilla="Elige una casilla del 1 al 12")
+@app_commands.choices(casilla=[app_commands.Choice(name=f"Casilla {i}", value=i) for i in range(1, 13)])
+async def run_bomb(interaction: discord.Interaction, apuesta: int, casilla: int):
+    await interaction.response.defer(ephemeral=False)
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    if datos.get("dinero", 0) < apuesta or apuesta <= 0:
+        return await interaction.followup.send("❌ No tienes suficiente dinero.", ephemeral=True)
+
+    def obtener_vecinos(c):
+        fila = (c - 1) // 4
+        col = (c - 1) % 4
+        vecinos = []
+        for f in range(max(0, fila - 1), min(3, fila + 2)):
+            for co in range(max(0, col - 1), min(4, col + 2)):
+                if not (f == fila and co == col):
+                    vecinos.append(f * 4 + co + 1)
+        return vecinos
+
+    bomba_1 = random.randint(1, 12)
+    bombas_activas = [bomba_1]
+    
+    segunda_bomba = random.random() < 0.20
+    if segunda_bomba:
+        bomba_2 = random.choice([x for x in range(1, 13) if x != bomba_1])
+        bombas_activas.append(bomba_2)
+
+    total_bombas_caidas = len(bombas_activas)
+
+    view_inicial = VistaRunBomb(uid, apuesta, casilla)
+    msg = await interaction.followup.send(
+        f"💣 **¡RUN BOMB INICIADO!**\n• Tu casilla elegida: `#{casilla}`\n• Bombas caídas: `{total_bombas_caidas}`\n\n*Las bombas están a punto de detonar y expandirse...*",
+        view=view_inicial,
+        ephemeral=False
+    )
+
+    await asyncio.sleep(1.5)
+
+    afectados_fase_1 = set(bombas_activas)
+    if casilla in afectados_fase_1:
+        await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": -apuesta}})
+        return await msg.edit(
+            content=f"🟥 **¡Impacto Directo!**\nLa bomba cayó justo en la casilla `#{casilla}`.\nSi estuvieras en una de esas casillas no obtuvieras nada..\n\n❌ Perdiste tu apuesta de **`{apuesta:,}`** monedas."
+        )
+
+    expandidos_1 = set()
+    for b in bombas_activas:
+        for v in obtener_vecinos(b):
+            expandidos_1.add(v)
+
+    await asyncio.sleep(1.5)
+    if casilla in expandidos_1:
+        premio = int(apuesta * 0.5)
+        reembolso_neto = premio - apuesta 
+        await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": reembolso_neto}})
+        return await msg.edit(
+            content=f"🟧 **¡Primera Expansión (Radio 1)!**\nLa onda expansiva alcanzó la casilla `#{casilla}`.\nSi estuvieras en una de esas casillas obtienes un `x0.5`..\n\n💸 Obtuviste la mitad de tu apuesta: **`{premio:,}`** monedas."
+        )
+
+    expandidos_2 = set()
+    for b in list(expandidos_1):
+        for v in obtener_vecinos(b):
+            expandidos_2.add(v)
+
+    await asyncio.sleep(1.5)
+    if casilla in expandidos_2:
+        return await msg.edit(
+            content=f"🟨 **¡Segunda Expansión alcanzada!**\nLa onda expansiva rozó tu posición en la casilla `#{casilla}`.\nObtienes tu apuesta de vuelta sin pérdidas (`x1.0`)."
+        )
+
+    if total_bombas_caidas >= 2:
+        premio_bonus = int(apuesta * 1.5)
+        ganancia_neta = premio_bonus - apuesta
+        await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": ganancia_neta}})
+        await msg.edit(
+            content=f"🟩 **¡SUPERVIVENCIA ÉPICA!**\nSobreviviste a **2 bombas** y sus expansiones en la casilla `#{casilla}`.\n\n🏆 ¡Obtuviste un **bonus de x1.5**! Ganaste **`+{ganancia_neta:,}`** monedas (Total: `{premio_bonus:,}`)."
+        )
+    else:
+        await msg.edit(
+            content=f"🟩 **¡SALVADO!**\nTe mantuviste totalmente fuera del radio de la explosión en la casilla `#{casilla}`.\nRecuperas tu apuesta a salvo."
+            )
+    
+
+class VistaCupGame(discord.ui.View):
+    def __init__(self, uid, apuesta):
+        super().__init__(timeout=60)
+        self.uid = uid
+        self.apuesta = apuesta
+        self.pelota_pos = random.randint(1, 6)
+
+        for i in range(1, 7):
+            button = discord.ui.Button(label=f"Casilla {i}", style=discord.ButtonStyle.blurple, custom_id=f"casilla_{i}")
+            button.callback = self.crear_callback(i)
+            self.add_item(button)
+
+    def crear_callback(self, numero_casilla):
+        async def callback(interaction: discord.Interaction):
+            if str(interaction.user.id) != self.uid:
+                return await interaction.response.send_message("❌ Este juego no es tuyo.", ephemeral=True)
+
+            for child in self.children:
+                child.disabled = True
+
+            if numero_casilla == self.pelota_pos:
+                ganancia = self.apuesta * 3
+                ganancia_neta = ganancia - self.apuesta
+                await usuarios_col.update_one({"_id": self.uid}, {"$inc": {"dinero": ganancia_neta}})
+                
+                await interaction.response.edit_message(
+                    content=f"🎉 **¡Acertaste!** La pelota estaba en la casilla **#{self.pelota_pos}**.\n🏆 Ganaste un `x3` de tu apuesta: **`+{ganancia_neta:,}`** monedas (Total: `{ganancia:,}`).",
+                    view=self
+                )
+            else:
+                await usuarios_col.update_one({"_id": self.uid}, {"$inc": {"dinero": -self.apuesta}})
+                await interaction.response.edit_message(
+                    content=f"❌ **¡Fallaste!** Elegiste la casilla #{numero_casilla}, pero la pelota estaba en la casilla **#{self.pelota_pos}**.\nPerdiste tu apuesta de **`{self.apuesta:,}`** monedas.",
+                    view=self
+                )
+
+        return callback
+
+
+@bot.tree.command(name="cup_game", description="Adivina dónde está la pelota entre 6 casillas para ganar un x3.")
+@app_commands.checks.cooldown(1, 300) # Cooldown de 5 minutos (300 segundos)
+@app_commands.describe(apuesta="Cantidad de dinero a apostar")
+async def cup_game(interaction: discord.Interaction, apuesta: int):
+    await interaction.response.defer(ephemeral=False)
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    if datos.get("dinero", 0) < apuesta or apuesta <= 0:
+        return await interaction.followup.send("❌ No tienes suficiente dinero.", ephemeral=True)
+
+    view = VistaCupGame(uid, apuesta)
+    await interaction.followup.send(
+        f"🎯 **¡Juego de la Pelota (Cup Game)!**\nHay 6 casillas disponibles. Una de ellas oculta la pelota.\nApuesta: `{apuesta:,}` monedas\n\n¡Haz clic en una casilla para adivinar!",
+        view=view,
+        ephemeral=False
+    )
+    
 
 class VistaRompemuros(discord.ui.View):
     def __init__(self, uid, apuesta, muros_rotos, multiplicador_actual):
