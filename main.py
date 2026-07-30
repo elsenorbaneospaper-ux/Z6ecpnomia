@@ -904,7 +904,7 @@ async def cohete_crash(interaction: discord.Interaction, apuesta: int):
     if datos.get("dinero", 0) < apuesta or apuesta <= 0:
         return await interaction.followup.send("❌ No tienes suficiente dinero.", ephemeral=True)
 # 2. CONDICIÓN DE LO MÁXIMO APOSTADO
-    if cantidad > APUESTA_MAXIMA:
+    if apuesta > APUESTA_MAXIMA:
         await interaction.response.send_message(
             f"❌ ¡Estás apostando demasiado! La **apuesta máxima permitida** es de **{APUESTA_MAXIMA}** monedas.",
             ephemeral=True
