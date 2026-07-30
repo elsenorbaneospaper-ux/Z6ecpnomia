@@ -777,7 +777,7 @@ async def cup_game(interaction: discord.Interaction, apuesta: int):
 # --- VISTA PARA ROMPEMUROS ---
 class RompemurosView(discord.ui.View):
     def __init__(self, uid, apuesta, multiplicador_actual=2.0, muros_rotos=1):
-        super().__init__(timeout=60)
+        super().__init__(timeout=600)
         self.uid = uid
         self.apuesta = apuesta
         self.multiplicador = multiplicador_actual
@@ -893,7 +893,7 @@ class VistaCohete(discord.ui.View):
 APUESTA_MAXIMA = 45000
 
 @bot.tree.command(name="cohete_crash", description="Apuesta y retira mientras el cohete sube +0.5 cada 1.5s.")
-@app_commands.checks.cooldown(1, 30)
+@app_commands.checks.cooldown(1, 300)
 @app_commands.describe(apuesta="Cantidad de dinero a apostar")
 async def cohete_crash(interaction: discord.Interaction, apuesta: int):
     await interaction.response.defer(ephemeral=False)
@@ -905,7 +905,7 @@ async def cohete_crash(interaction: discord.Interaction, apuesta: int):
         return await interaction.followup.send("❌ No tienes suficiente dinero.", ephemeral=True)
 # 2. CONDICIÓN DE LO MÁXIMO APOSTADO
     if apuesta > APUESTA_MAXIMA:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"❌ ¡Estás apostando demasiado! La **apuesta máxima permitida** es de **{APUESTA_MAXIMA}** monedas.",
             ephemeral=True
         )
