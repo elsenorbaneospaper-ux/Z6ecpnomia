@@ -431,9 +431,9 @@ async def ayuda(interaction: discord.Interaction):
             "• `/addbanco [cantidad/all]` — Guarda tu dinero de forma segura en el banco.\n"
             "• `/sacarbanco [cantidad/all]` — Saca dinero del banco para tenerlo en mano.\n"
             "• `/transferir [usuario] [cantidad]` — Transfiere dinero en efectivo a otro usuario.\n"
-            "• `/prestamo _ Pide dinero prestado con aprobación de botones.
-            "• `/pagar_prestamo _ Salda deudas bancarias con efectivo.
-            "• `/estado_prestamo _ Revisa deudas pendientes en privado.
+            "• `/prestamo _ Pide dinero prestado con aprobación de botones.\n"
+            "• `/pagar_prestamo _ Salda deudas bancarias con efectivo.\n"
+            "• `/estado_prestamo _ Revisa deudas pendientes en privado.\n"
             "• `/top` — Muestra el top 10 de los usuarios más ricos del servidor."
         ),
         inline=False
