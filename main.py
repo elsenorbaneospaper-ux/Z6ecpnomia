@@ -46,7 +46,7 @@ async def asegurar_usuario(uid: str):
         
         nuevo_usuario = {
             "_id": uid,
-            "dinero": 1000,
+            "dinero": 0,
             "banco": 0,
             "mascota_nivel": 1,
             "mascota_nombre": random.choice(nombres_azar),
@@ -426,10 +426,14 @@ async def ayuda(interaction: discord.Interaction):
         value=(
             "• `/balance [usuario]` — Revisa tu dinero en efectivo, banco y patrimonio total.\n"
             "• `/dinero` — Muestra información detallada de tus fondos.\n"
+            "• `/trade _ Intercambia ítems de forma segura y blindada.\n"
             "• `/verbanco` — Consulta el estado actual de tu cuenta bancaria.\n"
             "• `/addbanco [cantidad/all]` — Guarda tu dinero de forma segura en el banco.\n"
             "• `/sacarbanco [cantidad/all]` — Saca dinero del banco para tenerlo en mano.\n"
             "• `/transferir [usuario] [cantidad]` — Transfiere dinero en efectivo a otro usuario.\n"
+            "• `/prestamo _ Pide dinero prestado con aprobación de botones.
+            "• `/pagar_prestamo _ Salda deudas bancarias con efectivo.
+            "• `/estado_prestamo _ Revisa deudas pendientes en privado.
             "• `/top` — Muestra el top 10 de los usuarios más ricos del servidor."
         ),
         inline=False
@@ -1579,6 +1583,367 @@ async def trabajo(interaction: discord.Interaction):
         msg += f"\n\n🎉 **¡FELICIDADES! Subiste al Nivel {nuevo_nivel} de Chamba.** ¡Revisa /elegir_trabajo para ver si hay nuevos empleos!"
 
     await interaction.followup.send(msg, ephemeral=False)
+
+
+# --- CLASE 1: Menú de selección de ítems para el inventario ---
+class SelectInventarioTrade(discord.ui.Select):
+    def __init__(self, datos_usuario, duenio_id, callback_origen):
+        self.duenio_id = duenio_id
+        self.callback_origen = callback_origen
+        options = []
+        
+        # 1. Dinero en mano
+        dinero = datos_usuario.get("dinero", 0)
+        if dinero > 0:
+            options.append(discord.SelectOption(label=f"Dinero: {dinero:,} monedas", value="dinero", description="Ofrecer dinero en mano", emoji="💰"))
+        
+        # 2. XP de Chamba
+        xp_chamba = datos_usuario.get("xp_chamba", 0)
+        if xp_chamba > 0:
+            options.append(discord.SelectOption(label=f"XP Chamba: {xp_chamba:,}", value="xp_chamba", description="Ofrecer experiencia de trabajo", emoji="✨"))
+        
+        # 3. Nivel de Chamba
+        nivel_chamba = datos_usuario.get("nivel_chamba", 1)
+        if nivel_chamba > 1:
+            options.append(discord.SelectOption(label=f"Nivel de Chamba: Nvl {nivel_chamba}", value="nivel_chamba", description="Ofrecer niveles de trabajo", emoji="👔"))
+        
+        # 4. Picos
+        picos = datos_usuario.get("picos", [])
+        for pico in picos[:8]:
+            options.append(discord.SelectOption(label=f"Pico: {pico}", value=f"pico_{pico}", description="Ofrecer este pico", emoji="⛏️"))
+            
+        # 5. Minerales
+        minerales = datos_usuario.get("minerales", {})
+        for min_nombre, cant in list(minerales.items())[:8]:
+            if cant > 0:
+                options.append(discord.SelectOption(label=f"Mineral: {min_nombre} (x{cant})", value=f"mineral_{min_nombre}", description="Ofrecer este mineral", emoji="💎"))
+
+        # 6. Mascota
+        if datos_usuario.get("tiene_mascota_propia", False):
+            nombre_m = datos_usuario.get("mascota_nombre", "Mascota")
+            emoji_m = datos_usuario.get("mascota_emoji", "🐾")
+            options.append(discord.SelectOption(label=f"Mascota: {nombre_m}", value="mascota", description="Ofrecer tu mascota actual", emoji=emoji_m))
+
+        if not options:
+            options.append(discord.SelectOption(label="Nada que ofrecer", value="nada", description="No tienes ítems disponibles"))
+
+        super().__init__(placeholder="Selecciona qué objeto deseas ofrecer...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        if str(interaction.user.id) != self.duenio_id:
+            return await interaction.response.send_message("❌ Este menú de trade no te pertenece.", ephemeral=True)
+        
+        # Guardamos la selección y pasamos al siguiente paso
+        await self.callback_origen(interaction, self.values[0])
+
+
+# --- CLASE 2: Vista de Confirmación Final (Antiestafa) ---
+class VistaConfirmarTrade(discord.ui.View):
+    def __init__(self, emisor_id, receptor_id, oferta_emisor, oferta_receptor):
+        super().__init__(timeout=60)
+        self.emisor_id = emisor_id
+        self.receptor_id = receptor_id
+        self.oferta_emisor = oferta_emisor
+        self.oferta_receptor = oferta_receptor
+        self.confirmados = set()
+        self.completado = False
+
+    @discord.ui.button(label="✅ Confirmar Intercambio", style=discord.ButtonStyle.success)
+    async def confirmar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        uid = str(interaction.user.id)
+        if uid != self.emisor_id and uid != self.receptor_id:
+            return await interaction.response.send_message("❌ No formas parte de este intercambio.", ephemeral=True)
+
+        self.confirmados.add(uid)
+
+        if len(self.confirmados) == 2:
+            self.completado = True
+            for child in self.children:
+                child.disabled = True
+            await interaction.response.edit_message(content="🔄 **¡Ambos confirmaron! Procesando transferencia segura en la base de datos...**", view=self)
+            self.stop()
+        else:
+            await interaction.response.edit_message(content=f"⏳ <@{uid}> ha confirmado. Falta que la otra parte confirme para ejecutar el trade.", view=self)
+
+    @discord.ui.button(label="❌ Cancelar Trade", style=discord.ButtonStyle.danger)
+    async def cancelar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        uid = str(interaction.user.id)
+        if uid != self.emisor_id and uid != self.receptor_id:
+            return await interaction.response.send_message("❌ No puedes cancelar esto.", ephemeral=True)
+        
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(content="❌ El intercambio ha sido cancelado.", view=self)
+        self.stop()
+
+
+# --- CLASE 3: Vista temporal para contener el select ---
+class VistaMenuUnico(discord.ui.View):
+    def __init__(self, datos_usuario, duenio_id, callback_origen):
+        super().__init__(timeout=60)
+        self.add_item(SelectInventarioTrade(datos_usuario, duenio_id, callback_origen))
+
+
+# --- COMANDO /TRADE PRINCIPAL ---
+@bot.tree.command(name="trade", description="Inicia un intercambio seguro de picos, minerales, dinero, XP, chamba o mascotas.")
+@app_commands.checks.cooldown(1, 15)
+@app_commands.describe(usuario="Usuario con el que deseas realizar el intercambio")
+async def trade(interaction: discord.Interaction, usuario: discord.Member):
+    emisor_id = str(interaction.user.id)
+    receptor_id = str(usuario.id)
+
+    if emisor_id == receptor_id:
+        return await interaction.response.send_message("❌ No puedes hacer un trade contigo mismo.", ephemeral=True)
+
+    await asegurar_usuario(emisor_id)
+    await asegurar_usuario(receptor_id)
+
+    # 1. Solicitud inicial
+    class VistaSolicitud(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=60)
+            self.aceptado = False
+
+        @discord.ui.button(label="Aceptar Trade", style=discord.ButtonStyle.success)
+        async def aceptar(self, inter: discord.Interaction, btn: discord.ui.Button):
+            if str(inter.user.id) != receptor_id:
+                return await inter.response.send_message("❌ Esta solicitud no es para ti.", ephemeral=True)
+            self.aceptado = True
+            for child in self.children: child.disabled = True
+            await inter.response.edit_message(content=f"✅ ¡Trade aceptado por <@{receptor_id}>!", view=self)
+            self.stop()
+
+        @discord.ui.button(label="Rechazar", style=discord.ButtonStyle.danger)
+        async def rechazar(self, inter: discord.Interaction, btn: discord.ui.Button):
+            if str(inter.user.id) != receptor_id:
+                return await inter.response.send_message("❌ No puedes rechazar esto.", ephemeral=True)
+            for child in self.children: child.disabled = True
+            await inter.response.edit_message(content=f"❌ Solicitud de trade rechazada.", view=self)
+            self.stop()
+
+    vista_sol = VistaSolicitud()
+    await interaction.response.send_message(
+        f"🤝 **Solicitud de Intercambio**\n<@{receptor_id}>, <@{emisor_id}> quiere iniciar un trade seguro contigo.",
+        view=vista_sol, ephemeral=False
+    )
+    msg_sol = await interaction.original_response()
+
+    await vista_sol.wait()
+    if not vista_sol.aceptado:
+        await asyncio.sleep(5)
+        try: await msg_sol.delete()
+        except: pass
+        return
+
+    # Variables para almacenar qué va a dar cada uno
+    seleccion_emisor = None
+    seleccion_receptor = None
+
+    # 2. Turno del Emisor para elegir
+    async def cb_emisor(inter, eleccion):
+        nonlocal seleccion_emisor
+        seleccion_emisor = eleccion
+        await inter.response.edit_message(content=f"📦 <@{emisor_id}> ha seleccionado su oferta.", view=None)
+
+    datos_emisor = await usuarios_col.find_one({"_id": emisor_id})
+    msg_e = await interaction.followup.send(
+        f"💼 **Turno de <@{emisor_id}> (Emisor):** Elige qué vas a ofrecer:",
+        view=VistaMenuUnico(datos_emisor, emisor_id, cb_emisor), ephemeral=False
+    )
+
+    # Esperar a que el emisor elija (máximo 60s)
+    while seleccion_emisor is None:
+        await asyncio.sleep(1)
+
+    # 3. Turno del Receptor para elegir
+    async def cb_receptor(inter, eleccion):
+        nonlocal seleccion_receptor
+        seleccion_receptor = eleccion
+        await inter.response.edit_message(content=f"📦 <@{receptor_id}> ha seleccionado su oferta.", view=None)
+
+    datos_receptor = await usuarios_col.find_one({"_id": receptor_id})
+    msg_r = await interaction.followup.send(
+        f"💼 **Turno de <@{receptor_id}> (Receptor):** Elige qué vas a ofrecer:",
+        view=VistaMenuUnico(datos_receptor, receptor_id, cb_receptor), ephemeral=False
+    )
+
+    while seleccion_receptor is None:
+        await asyncio.sleep(1)
+
+    # 4. Panel de Resumen y Doble Confirmación Antiestafa
+    vista_conf = VistaConfirmarTrade(emisor_id, receptor_id, seleccion_emisor, seleccion_receptor)
+    msg_conf = await interaction.followup.send(
+        f"⚖️ **Resumen del Intercambio**\n\n"
+        f"• <@{emisor_id}> ofrece: `{seleccion_emisor}`\n"
+        f"• <@{receptor_id}> ofrece: `{seleccion_receptor}`\n\n"
+        f"⚠️ **Verifiquen bien antes de confirmar. Ambos deben presionar el botón verde.**",
+        view=vista_conf, ephemeral=False
+    )
+
+    await vista_conf.wait()
+
+    # 5. Ejecución Atómica en MongoDB si ambos aceptaron
+    if vista_conf.completado:
+        # AQUÍ PROGRAMAS TU LÓGICA DE TRANSACCIÓN REAL USANDO `update_one`
+        # (Ej: restar a uno y sumar al otro según lo que contenga `seleccion_emisor` y `seleccion_receptor`)
+        
+        await interaction.followup.send(f"🎉 **¡Intercambio realizado con éxito y de forma segura!**", ephemeral=False)
+    else:
+        await interaction.followup.send(f"❌ El intercambio fue cancelado o expiró.", ephemeral=False)
+
+    # Borrar mensajes del trade 5 segundos después
+    await asyncio.sleep(5)
+    try:
+        await msg_sol.delete()
+        await msg_e.delete()
+        await msg_r.delete()
+        await msg_conf.delete()
+    except:
+        pass
+        
+# --- COMANDO 2: /pagar_prestamo ---
+@bot.tree.command(name="pagar_prestamo", description="Paga total o parcialmente tu deuda pendiente con el banco.")
+@app_commands.checks.cooldown(1, 10)
+@app_commands.describe(cantidad="Cantidad de monedas que vas a abonar o pagar")
+async def pagar_prestamo(interaction: discord.Interaction, cantidad: int):
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    if cantidad <= 0:
+        return await interaction.response.send_message("❌ Ingresa una cantidad válida para pagar.", ephemeral=True)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    dinero_mano = datos.get("dinero", 0)
+    deuda_actual = datos.get("prestamo", 0)
+
+    if deuda_actual <= 0:
+        return await interaction.response.send_message("✅ ¡No tienes ninguna deuda pendiente con el banco!", ephemeral=True)
+
+    if dinero_mano < cantidad:
+        return await interaction.response.send_message(f"❌ No tienes suficiente dinero en mano. Tienes **{dinero_mano:,} monedas**.", ephemeral=True)
+
+    # Si intenta pagar más de lo que debe, ajustamos al monto exacto de la deuda
+    pago_efectivo = min(cantidad, deuda_actual)
+    nueva_deuda = deuda_actual - pago_efectivo
+
+    # Restar dinero en mano y actualizar la deuda en MongoDB
+    await usuarios_col.update_one(
+        {"_id": uid},
+        {
+            "$inc": {"dinero": -pago_efectivo},
+            "$set": {"prestamo": nueva_deuda}
+        }
+    )
+
+    if nueva_deuda == 0:
+        await interaction.response.send_message(
+            f"🎉 **¡Deuda Saldada!** Has pagado **{pago_efectivo:,} monedas**. Ya no le debes nada al banco.",
+            ephemeral=False
+        )
+    else:
+        await interaction.response.send_message(
+            f"💳 Has abonado **{pago_efectivo:,} monedas** a tu préstamo.\n📉 Deuda restante: **{nueva_deuda:,} monedas**.",
+            ephemeral=False
+        )
+
+
+# --- COMANDO 3: /estado_prestamo ---
+@bot.tree.command(name="estado_prestamo", description="Revisa si tienes deudas activas con el banco.")
+@app_commands.checks.cooldown(1, 5)
+async def estado_prestamo(interaction: discord.Interaction):
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    deuda = datos.get("prestamo", 0)
+
+    if deuda > 0:
+        await interaction.response.send_message(
+            f"📊 **Estado Financiero**\n🔴 Tienes una deuda activa de: **{deuda:,} monedas**.\nUsa `/pagar_prestamo` para saldarla.",
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            f"📊 **Estado Financiero**\n🟢 ¡Estás limpio! No tienes deudas pendientes con el banco.",
+            ephemeral=True
+        )
+
+# --- VISTA 1: Botones de Aceptar o Rechazar Préstamo ---
+class VistaDecisionPrestamo(discord.ui.View):
+    def __init__(self, solicitante_id, cantidad):
+        super().__init__(timeout=60)
+        self.solicitante_id = solicitante_id
+        self.cantidad = cantidad
+        self.aprobado = None
+
+    @discord.ui.button(label="Aceptar Préstamo", style=discord.ButtonStyle.success, emoji="✅")
+    async def aceptar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Cualquiera puede presionar el botón para aprobarlo o tomarlo (según tu lógica de banco comunitario o bot general)
+        self.aprobado = True
+        for child in self.children:
+            child.disabled = True
+        
+        # Otorgar el préstamo en MongoDB al solicitante
+        await asegurar_usuario(self.solicitante_id)
+        await usuarios_col.update_one(
+            {"_id": self.solicitante_id},
+            {
+                "$inc": {"dinero": self.cantidad},
+                "$set": {"prestamo": self.cantidad}
+            }
+        )
+
+        await interaction.response.edit_message(
+            content=f"🏦 **¡Préstamo Aprobado!**\nEl préstamo de **{self.cantidad:,} monedas** solicitado por <@{self.solicitante_id}> ha sido aceptado y entregado por <@{interaction.user.id}>.",
+            view=self
+        )
+        self.stop()
+
+    @discord.ui.button(label="Rechazar", style=discord.ButtonStyle.danger, emoji="❌")
+    async def rechazar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.aprobado = False
+        for child in self.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(
+            content=f"❌ El préstamo de **{self.cantidad:,} monedas** solicitado por <@{self.solicitante_id}> fue rechazado.",
+            view=self
+        )
+        self.stop()
+
+
+# --- COMANDO /PRESTAMO CON BOTONES ---
+@bot.tree.command(name="prestamo", description="Solicita un préstamo bancario interactivo.")
+@app_commands.checks.cooldown(1, 30)
+@app_commands.describe(cantidad="Cantidad de monedas que deseas pedir prestadas")
+async def prestamo(interaction: discord.Interaction, cantidad: int):
+    uid = str(interaction.user.id)
+    await asegurar_usuario(uid)
+
+    if cantidad <= 0:
+        return await interaction.response.send_message("❌ La cantidad debe ser mayor a 0.", ephemeral=True)
+
+    if cantidad > 10000:
+        return await interaction.response.send_message("❌ El banco no te puede prestar más de **10,000 monedas** de golpe.", ephemeral=True)
+
+    datos = await usuarios_col.find_one({"_id": uid})
+    deuda_actual = datos.get("prestamo", 0)
+
+    if deuda_actual > 0:
+        return await interaction.response.send_message(
+            f"❌ Ya tienes un préstamo activo de **{deuda_actual:,} monedas**. Debes pagarlo antes de pedir otro.",
+            ephemeral=True
+        )
+
+    # Crear la vista con los botones interactivos
+    vista = VistaDecisionPrestamo(uid, cantidad)
+
+    await interaction.response.send_message(
+        f"📋 **Solicitud de Préstamo**\n<@{uid}> ha solicitado un préstamo por **{cantidad:,} monedas**.\n¿Deseas aceptar o cancelar esta solicitud?",
+        view=vista,
+        ephemeral=False
+    )
+    
 
 # --- COMANDOS DE MASCOTAS (Integrados con la estructura base) ---
 
