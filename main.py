@@ -2238,9 +2238,6 @@ async def dar(interaction: discord.Interaction, usuario: discord.Member, cantida
     if not es_dueno(interaction):
         return await interaction.response.send_message("❌ No tienes permisos para usar este comando de dueño.", ephemeral=True)
 
-    if cantidad <= 0:
-        return await interaction.response.send_message("❌ La cantidad debe ser mayor a 0.", ephemeral=True)
-
     await interaction.response.defer(ephemeral=True)
     uid = str(usuario.id)
     await asegurar_usuario(uid)
