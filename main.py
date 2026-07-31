@@ -458,7 +458,6 @@ async def ayuda(interaction: discord.Interaction):
             "• `/pavo_hambriento` — Participa en el minijuego de apuestas del pavo.\n"
             "• `/suerte_raton` — Pon a prueba tu suerte con el minijuego del ratón.\n"
             "• `/cohete_crash` — Apuesta y retira antes de que el cohete estrelle.\n"
-            "• `/rompemuros` — Juega a romper muros por recompensas en efectivo.\n"
             "• `/run_bomb` _ Elige una casilla del 1 al 12 e intenta sobrevivir a las bombas y sus ondas expansivas que se extienden cada 1.5 segundos con un 20% de probabilidad de una bomba extra. (Cooldown: 8 minutos)."
             "• `/cup_game` — Adivina en qué casilla de los 6 vasos se oculta la pelota con un solo intento para ganar un multiplicador de x3 de tu apuesta. (Cooldown: 5 minutos)."
         ),
@@ -774,88 +773,7 @@ async def cup_game(interaction: discord.Interaction, apuesta: int):
     )
     
 
-# --- VISTA PARA ROMPEMUROS ---
-class RompemurosView(discord.ui.View):
-    def __init__(self, uid, apuesta, multiplicador_actual=2.0, muros_rotos=1):
-        super().__init__(timeout=600)
-        self.uid = uid
-        self.apuesta = apuesta
-        self.multiplicador = multiplicador_actual
-        self.muros_rotos = muros_rotos
 
-    @discord.ui.button(label="💥 Romper Siguiente Muro", style=discord.ButtonStyle.green)
-    async def romper(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if str(interaction.user.id) != self.uid:
-            await interaction.response.send_message("❌ Este no es tu juego.", ephemeral=True)
-            return
-
-        # Probabilidad de fallo que aumenta un 3% por cada muro roto
-        probabilidad_fallo = 0.03 * self.muros_rotos
-        if random.random() < probabilidad_fallo:
-            for child in self.children:
-                child.disabled = True
-            await interaction.response.edit_message(
-                content=f"💥 ¡El muro colapsó en el nivel {self.muros_rotos}! Perdiste tu apuesta de **{self.apuesta}** monedas.",
-                view=self
-            )
-            self.stop()
-            return
-
-        self.muros_rotos += 1
-        self.multiplicador = round(self.multiplicador * 1.5, 2)
-        
-        await interaction.response.edit_message(
-            content=f"🧱 Muros rotos: **{self.muros_rotos - 1}** | Multiplicador actual: **{self.multiplicador}x**\n¿Deseas seguir arriesgando o retirar?",
-            view=self
-        )
-
-    @discord.ui.button(label="💰 Retirar Ganancias", style=discord.ButtonStyle.blurple)
-    async def retirar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if str(interaction.user.id) != self.uid:
-            await interaction.response.send_message("❌ Este no es tu juego.", ephemeral=True)
-            return
-
-        ganancia_total = int(self.apuesta * self.multiplicador)
-        await usuarios_col.update_one({"_id": self.uid}, {"$inc": {"dinero": ganancia_total}})
-
-        for child in self.children:
-            child.disabled = True
-
-        await interaction.response.edit_message(
-            content=f"🎉 ¡Retiro exitoso! Te llevaste **{ganancia_total}** monedas (Multiplicador: {self.multiplicador}x).",
-            view=self
-        )
-        self.stop()
-
-
-@bot.tree.command(name="rompemuros", description="Rompe muros y multiplica tus ganancias con riesgo progresivo")
-@app_commands.checks.cooldown(1, 180, key=lambda i: i.user.id)
-async def rompemuros(interaction: discord.Interaction, apuesta: int):
-    await interaction.response.defer(ephemeral=False)
-    
-    uid = str(interaction.user.id)
-    await asegurar_usuario(uid)
-
-    if apuesta <= 0:
-        await interaction.followup.send("❌ La apuesta debe ser mayor a 0.", ephemeral=True)
-        return
-
-    u = await usuarios_col.find_one({"_id": uid})
-    dinero_mano = u.get("dinero", 0)
-
-    if dinero_mano < apuesta:
-        await interaction.followup.send(f"❌ No tienes suficiente dinero. Tienes **{dinero_mano}** en mano.", ephemeral=True)
-        return
-
-    # Descuenta la apuesta inicial
-    await usuarios_col.update_one({"_id": uid}, {"$inc": {"dinero": -apuesta}})
-
-    view = RompemurosView(uid, apuesta)
-    await interaction.followup.send(
-        f"🧱 ¡Has iniciado rompemuros con una apuesta de **{apuesta}**!\nMultiplicador inicial: **2.0x**",
-        view=view
-    )
-    
 
 
     
